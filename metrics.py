@@ -22,10 +22,10 @@ except ImportError as e:
     build_sam2 = None
     SAM2ImagePredictor = None
 
-# +++ Add SAM2 Model Loader +++
-def load_sam2_model(checkpoint_path, config_path, device='cuda'):
+# +++ Update SAM2 Model Loader for Image Predictor +++
+def load_sam2_image_predictor(checkpoint_path, config_path, device='cuda'):
     """
-    Load SAM2 model. Ensure paths are correct.
+    Load SAM2 model and wrap it in an Image Predictor.
 
     Args:
         checkpoint_path (str): Path to the SAM2 model checkpoint (.pt file).
@@ -33,15 +33,15 @@ def load_sam2_model(checkpoint_path, config_path, device='cuda'):
         device (str): Device to load the model onto ('cuda' or 'cpu').
 
     Returns:
-        Loaded SAM2 model object.
+        Loaded SAM2ImagePredictor object.
 
     Raises:
         ImportError: If SAM2 components could not be imported.
         FileNotFoundError: If checkpoint or config file not found.
         Exception: For other model loading errors.
     """
-    if build_sam2 is None:
-        raise ImportError("SAM2 components could not be imported. Cannot load model.")
+    if build_sam2 is None or SAM2ImagePredictor is None:
+        raise ImportError("SAM2 components could not be imported. Cannot load predictor.")
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"SAM2 Checkpoint not found: {checkpoint_path}")
     if not os.path.exists(config_path):
@@ -54,10 +54,11 @@ def load_sam2_model(checkpoint_path, config_path, device='cuda'):
         # Verify these in the SAM2 library source if errors occur.
         sam2_model = build_sam2(cfg_path=config_path, ckpt_path=checkpoint_path, device=device)
         sam2_model.eval() # Set model to evaluation mode
-        print("SAM2 model loaded successfully and set to eval mode.")
-        return sam2_model
+        predictor = SAM2ImagePredictor(sam2_model)
+        print("SAM2 model loaded successfully and wrapped in Image Predictor.")
+        return predictor # Return the predictor instance
     except Exception as e:
-        print(f"--- ERROR loading SAM2 model: {e} ---")
+        print(f"--- ERROR loading SAM2 model/predictor: {e} ---")
         raise
 
 def calculate_miou(pred_mask: np.ndarray, gt_mask: np.ndarray) -> float:
@@ -148,15 +149,15 @@ def calculate_boundary_f1(pred_mask: np.ndarray, gt_mask: np.ndarray, tolerance_
     f1_score = 2 * precision * recall / (precision + recall)
     return f1_score
 
-# --- evaluate_robustness Updated for SAM2 ---
-def evaluate_robustness(sam2_model, test_dataset, degradation_fns, severity_levels, model_name="SAM2", prompt_type='point'):
+# --- evaluate_robustness Updated for SAM2 Image Predictor --- #
+def evaluate_robustness(sam2_image_predictor, test_dataset, degradation_fns, severity_levels, model_name="SAM2", prompt_type='point'):
     """
-    Evaluates SAM2 model robustness across specified degradations and severities.
+    Evaluates SAM2 model robustness using SAM2ImagePredictor across degradations.
 
     Args:
-        sam2_model: The **loaded** SAM2 model object (from load_sam2_model).
-        test_dataset: An iterable yielding (sample_id, image, gt_mask).
-                      'image' should be HxWxC NumPy array (RGB format expected by SAM2).
+        sam2_image_predictor: The **loaded** SAM2ImagePredictor object.
+        test_dataset: An iterable yielding (sample_id, image_rgb, gt_mask).
+                      'image_rgb' should be HxWxC NumPy array (RGB format expected by SAM2).
                       'gt_mask' should be HxW NumPy array (binary/boolean).
         degradation_fns: Dict mapping degradation names (str) to functions.
                          Each function should take (image_rgb, severity) and return degraded_image_rgb.
@@ -168,20 +169,19 @@ def evaluate_robustness(sam2_model, test_dataset, degradation_fns, severity_leve
     Returns:
         pandas.DataFrame with evaluation metrics for each image, degradation, and severity.
     """
-    if SAM2ImagePredictor is None:
-        raise ImportError("SAM2ImagePredictor could not be imported. Cannot evaluate.")
 
     results = []
-    # Instantiate predictor once - assumes model device matches desired predictor device
-    predictor = SAM2ImagePredictor(sam2_model)
+    # Predictor is passed in directly
+    predictor = sam2_image_predictor
 
     total_samples = len(test_dataset) if hasattr(test_dataset, '__len__') else 'unknown'
-    print(f"Starting SAM2 evaluation for {model_name} on {total_samples} samples...")
+    print(f"Starting SAM2 evaluation for {model_name} using Image Predictor on {total_samples} samples...")
 
     for i, (sample_id, image_rgb, gt_mask) in enumerate(test_dataset):
         # print(f"Processing sample {i+1}/{total_samples} (ID: {sample_id})...") # Verbose
 
-        # --- Generate Default Prompt (Point at GT center) ---
+        # --- Generate Default Prompt (Point at GT center) --- #
+        # (Keep this logic, it's independent of predictor type)
         point_coords = None
         point_labels = None
         prompt_valid = False
@@ -214,24 +214,22 @@ def evaluate_robustness(sam2_model, test_dataset, degradation_fns, severity_leve
                              results.append({'model_name': model_name, 'sample_id': sample_id, 'degradation': deg_name, 'severity': severity, 'miou': np.nan, 'boundary_f1': np.nan})
                 continue # Skip to next sample
 
-        # --- Helper function for SAM2 prediction ---
+        # --- Helper function for SAM2 prediction using Image Predictor --- #
         @torch.no_grad() # Disable gradient calculations for inference
         def get_sam2_prediction(img_to_predict_rgb):
-            """Gets SAM2 prediction for a single image and prompt."""
-            # Ensure image is in RGB format (as function arg suggests)
+            """Gets SAM2 prediction for a single image and prompt using Image Predictor."""
             try:
                 predictor.set_image(img_to_predict_rgb) # Expects RGB numpy array
                 if prompt_type == 'point':
+                    # Predict uses the image set previously
                     masks, scores, logits = predictor.predict(
                         point_coords=point_coords,
                         point_labels=point_labels,
                         multimask_output=False # Get single best mask
                     )
-                    # Output 'masks' is typically a list [mask_tensor], even if multimask=False
-                    # Convert mask tensor to numpy boolean array
                     if masks is not None and len(masks) > 0:
-                        # Assuming mask is on the same device as the model
-                        pred_mask_np = masks[0].cpu().numpy().squeeze() # Squeeze if extra dim
+                        # Output 'masks' is numpy array for ImagePredictor
+                        pred_mask_np = masks[0] # [0] index might still be needed if predict returns list-like
                         return pred_mask_np.astype(bool)
                     else:
                         print(f"  Warning: Sample {sample_id}: SAM2 returned no mask for prompt.")
@@ -254,7 +252,7 @@ def evaluate_robustness(sam2_model, test_dataset, degradation_fns, severity_leve
                 # traceback.print_exc()
                 return None # Return None on prediction error
 
-        # --- 1. Baseline on clean image ---
+        # --- 1. Baseline on clean image --- #
         clean_mask_pred = get_sam2_prediction(image_rgb)
         baseline_miou = calculate_miou(clean_mask_pred, gt_mask)
         baseline_bf1 = calculate_boundary_f1(clean_mask_pred, gt_mask)
@@ -263,7 +261,7 @@ def evaluate_robustness(sam2_model, test_dataset, degradation_fns, severity_leve
             'severity': 0, 'miou': baseline_miou, 'boundary_f1': baseline_bf1
         })
 
-        # --- 2. Evaluate each degradation ---
+        # --- 2. Evaluate each degradation --- #
         for deg_name, deg_fn in degradation_fns.items():
             if deg_name not in severity_levels:
                 print(f" Warning: No severity levels defined for degradation '{deg_name}'. Skipping.")
@@ -297,7 +295,7 @@ def evaluate_robustness(sam2_model, test_dataset, degradation_fns, severity_leve
 
 # Example Usage (Illustrative - requires actual data, models, and VALID paths)
 if __name__ == '__main__':
-    print("--- Running metrics.py Main Example ---")
+    print("--- Running metrics.py Main Example (Using Image Predictor) ---")
     print("This example requires:")
     print("  1. SAM2 installed via 'pip install -e ./external/sam2'")
     print("  2. Correct paths to SAM2 checkpoint (.pt) and config (.yaml) files.")
@@ -312,7 +310,7 @@ if __name__ == '__main__':
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Using device: {DEVICE}")
 
-    # --- Dummy Degradation Functions (Keep or replace with yours) ---
+    # --- Dummy Degradation Functions (Keep or replace with yours) --- #
     def dummy_blur(image_rgb, severity):
         ksize = int(severity * 2) + 1
         ksize = ksize if ksize % 2 != 0 else ksize + 1 # Kernel must be odd
@@ -326,7 +324,7 @@ if __name__ == '__main__':
         noisy_image = np.clip(image_rgb.astype(np.float32) + noise, 0, 255)
         return noisy_image.astype(image_rgb.dtype) # Cast back
 
-    # --- Create Dummy Dataset (Small RGB images) ---
+    # --- Create Dummy Dataset (Small RGB images) --- #
     dummy_dataset = []
     for i in range(2): # Number of sample images
         img_h, img_w = 64, 80 # Smaller dummy images
@@ -341,15 +339,15 @@ if __name__ == '__main__':
         mask[mask_area] = True
         dummy_dataset.append((f"dummy_{i}", img_rgb, mask))
 
-    # --- Define Degradations and Levels ---
+    # --- Define Degradations and Levels --- #
     degradation_functions = { 'blur': dummy_blur, 'noise': dummy_noise }
     severity_levels = { 'blur': [1, 5, 10], 'noise': [10, 25, 50] } # Example severities
 
-    # --- Load Model and Run Evaluation ---
-    sam_model = None
+    # --- Load Model and Run Evaluation --- #
+    sam_predictor = None # Use Image Predictor
     try:
-        # Attempt to load the SAM2 model
-        sam_model = load_sam2_model(SAM2_CHECKPOINT_PATH, SAM2_CONFIG_PATH, device=DEVICE)
+        # Attempt to load the SAM2 image predictor
+        sam_predictor = load_sam2_image_predictor(SAM2_CHECKPOINT_PATH, SAM2_CONFIG_PATH, device=DEVICE)
 
     except FileNotFoundError:
         print("\n---! ERROR: SAM2 checkpoint or config path not found !---")
@@ -364,12 +362,12 @@ if __name__ == '__main__':
         # import traceback
         # traceback.print_exc() # Uncomment for detailed stack trace
 
-    # Proceed only if model loaded successfully
-    if sam_model:
+    # Proceed only if predictor loaded successfully
+    if sam_predictor:
         print("\n--- Running Evaluation ---")
         try:
             results_df = evaluate_robustness(
-                sam2_model=sam_model,
+                sam2_image_predictor=sam_predictor, # Pass the predictor
                 test_dataset=dummy_dataset,
                 degradation_fns=degradation_functions,
                 severity_levels=severity_levels,
@@ -382,7 +380,7 @@ if __name__ == '__main__':
             pd.set_option('display.width', 120)
             print(results_df)
 
-            # --- Post-Hoc Tolerance Analysis (Example) ---
+            # --- Post-Hoc Tolerance Analysis (Example) --- #
             if not results_df.empty:
                  print("\n--- Degradation Tolerance Example (Max Severity with mIoU >= 50% of Baseline) ---")
                  baseline_iou_map = results_df[results_df['degradation'] == 'none'].set_index('sample_id')['miou']
@@ -413,6 +411,6 @@ if __name__ == '__main__':
             # traceback.print_exc()
 
     else:
-        print("\n--- Evaluation skipped because the SAM2 model could not be loaded. ---")
+        print("\n--- Evaluation skipped because the SAM2 predictor could not be loaded. ---")
 
     print("\n--- metrics.py Main Example Finished ---")
