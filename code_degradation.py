@@ -51,8 +51,8 @@ from PIL import Image, ImageEnhance
 import os
 
 # Input and output directories
-input_dir = save_dir  # original images
-output_dir = os.path.join(save_dir, 'degraded')
+input_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/images'  # original images
+output_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/degraded'
 os.makedirs(output_dir, exist_ok=True)
 
 # Subfolders for different types of degradation
@@ -60,21 +60,21 @@ degradations = ['gaussian_blur', 'motion_blur', 'jpeg_compression', 'low_contras
 for d in degradations:
     os.makedirs(os.path.join(output_dir, d), exist_ok=True)
 
-def apply_gaussian_blur(image, kernel_size=7):
+def apply_gaussian_blur(image, kernel_size=15):  # Increased kernel_size
     return cv2.GaussianBlur(image, (kernel_size, kernel_size), 0)
 
-def apply_motion_blur(image, kernel_size=15):
+def apply_motion_blur(image, kernel_size=25):  # Increased kernel_size
     kernel = np.zeros((kernel_size, kernel_size))
     kernel[int((kernel_size-1)/2), :] = np.ones(kernel_size)
     kernel /= kernel_size
     return cv2.filter2D(image, -1, kernel)
 
-def apply_jpeg_compression(image, quality=20):
+def apply_jpeg_compression(image, quality=5):  # Decreased quality
     encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
     _, encimg = cv2.imencode('.jpg', image, encode_param)
     return cv2.imdecode(encimg, 1)
 
-def apply_low_contrast(image, factor=0.5):
+def apply_low_contrast(image, factor=0.3):  # Decreased factor
     pil_img = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     enhancer = ImageEnhance.Contrast(pil_img)
     low_contrast_img = enhancer.enhance(factor)
