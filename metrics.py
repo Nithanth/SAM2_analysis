@@ -29,7 +29,7 @@ def calculate_miou(pred_mask: np.ndarray, gt_mask: np.ndarray) -> float:
     union = np.logical_or(pred_mask, gt_mask).sum()
 
     if union == 0:
-        # Both masks are empty. IoU is 1 if GT is also empty (implies intersection is 0), 0 otherwise.
+        # Both masks are empty. IoU is 1 if GT is also empty (implies intersection is 0), 0 otherwise
         return 1.0 if intersection == 0 else 0.0
 
     iou = float(intersection) / float(union)

@@ -4,10 +4,22 @@ pandas>=1.3.0
 opencv-python>=4.5.0
 Pillow>=9.0.0
 scikit-image>=0.19.0
+tqdm
+opencv-python
+numpy
+pandas
+tqdm
+# Added for SAM2 model loading and execution
+torch
+transformers
+accelerate
+Pillow
 
 # PyTorch (for SAM2 & potential baselines)
 # Check compatibility with your CUDA version if using GPU
 torch>=2.0.0
+transformers
+accelerate
 torchvision>=0.15.0
 
 # LoRA (as per project plan)
