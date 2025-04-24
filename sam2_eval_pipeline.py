@@ -1,21 +1,27 @@
 import json
 import os
-import cv2
+import cv2 # Used for loading images as NumPy arrays
 import numpy as np
 import pandas as pd
 from tqdm import tqdm # Optional: for progress bar
 import torch
-from PIL import Image
+# PIL is not strictly needed if loading with cv2
 
-# Import Hugging Face transformers components
-# Make sure to install: pip install transformers torch accelerate Pillow
+# Import components from the official sam2 library
+# IMPORTANT: You must install the sam2 library first!
+# (e.g., git clone https://github.com/facebookresearch/sam2.git && cd sam2 && pip install -e .)
 try:
-    from transformers import AutoProcessor, AutoModelForVision2Seq
-    # Or replace with specific SAM2 classes if they exist, e.g.:
-    # from transformers import SamProcessor, SamModel 
+    from sam2.sam2_image_predictor import SAM2ImagePredictor
+    # Assuming automatic mask generation uses a class similar to original SAM
+    # Check automatic_mask_generator_example.ipynb for the correct import and usage!
+    from sam2.automatic_mask_generator import SamAutomaticMaskGenerator 
 except ImportError:
-    print("Error: Could not import transformers library.")
-    print("Please install it: pip install transformers torch accelerate Pillow")
+    print("Error: Could not import from the 'sam2' library.")
+    print("Please ensure you have cloned the repo and installed it following the official README:")
+    print("  git clone https://github.com/facebookresearch/sam2.git")
+    print("  cd sam2")
+    print("  pip install -e .")
+    print("  cd ..")
     exit()
 
 # Import metric functions from metrics.py
@@ -27,84 +33,99 @@ except ImportError:
     print("Ensure metrics.py is in the same directory or accessible via PYTHONPATH.")
     exit()
 
-# --- SAM2 Model Interaction using Hugging Face --- 
+# --- SAM2 Model Interaction using sam2 library + HF Hub --- 
 
-# Global variables for model and processor to avoid reloading on each call
-model = None
-processor = None
+# Global variables for predictor and generator to avoid reloading
+predictor = None
+mask_generator = None # For automatic mask generation
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def load_sam2_model(model_id: str):
-    """Loads the SAM2 model and processor from Hugging Face."""
-    global model, processor
-    if model is not None and processor is not None:
-        print("Model and processor already loaded.")
-        return model, processor
+def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict = None):
+    """Loads the SAM2 predictor using .from_pretrained and initializes the automatic mask generator."""
+    global predictor, mask_generator
+    if predictor is not None and mask_generator is not None:
+        print("Predictor and Mask Generator already loaded.")
+        return predictor, mask_generator
         
-    print(f"Loading SAM2 model and processor for '{model_id}'...")
+    print(f"Loading SAM2 predictor from Hugging Face ID: '{model_hf_id}'...")
     try:
-        # Replace AutoModelForVision2Seq with the correct class if needed
-        model = AutoModelForVision2Seq.from_pretrained(model_id).to(device)
-        processor = AutoProcessor.from_pretrained(model_id)
-        print(f"Model and processor loaded successfully to {device}.")
-        return model, processor
+        # Load the predictor using the sam2 library's HF integration
+        predictor = SAM2ImagePredictor.from_pretrained(model_hf_id)
+        predictor.model.to(device) # Ensure model is on the correct device
+        print(f"Predictor loaded successfully to {device}.")
+
+        # Initialize the Automatic Mask Generator
+        # Default config example; adjust based on automatic_mask_generator_example.ipynb
+        if generator_config is None:
+             # Example settings - **ADJUST THESE BASED ON THE SAM2 EXAMPLE NOTEBOOK**
+            generator_config = {
+                "points_per_side": 32,
+                "pred_iou_thresh": 0.88,
+                "stability_score_thresh": 0.95,
+                "crop_n_layers": 0, # 0 means no cropping - faster for single images
+                "crop_n_points_downscale_factor": 1,
+                "min_mask_region_area": 100, # Minimum mask area in pixels
+            }
+        print(f"Initializing SamAutomaticMaskGenerator with config: {generator_config}")
+        mask_generator = SamAutomaticMaskGenerator(predictor.model, **generator_config)
+        print("SamAutomaticMaskGenerator initialized.")
+
+        return predictor, mask_generator
     except Exception as e:
-        print(f"Error loading model/processor '{model_id}' from Hugging Face: {e}")
+        print(f"Error loading predictor '{model_hf_id}' or initializing generator: {e}")
+        # import traceback
+        # traceback.print_exc() # Uncomment for detailed error traceback
         return None, None
 
-def predict_mask(model, processor, image_path: str) -> tuple[np.ndarray | None, float]:
+def predict_auto_mask(mask_generator, image_path: str) -> tuple[np.ndarray | None, float]:
     """ 
-    Runs SAM2 model inference using Hugging Face transformer model.
-    Performs automatic mask generation and selects the best mask.
+    Generates masks automatically using SamAutomaticMaskGenerator.
+    Selects the 'best' mask based on predicted IoU.
     Returns the binary mask (np.ndarray, 0/1) and its predicted IoU score (float).
     Returns (None, np.nan) on failure.
     """
-    # print(f"  Predicting mask for {os.path.basename(image_path)}...")
+    # print(f"  Generating masks for {os.path.basename(image_path)}...")
     try:
-        # 1. Load the image using PIL (transformers often prefer PIL)
-        raw_image = Image.open(image_path).convert("RGB")
+        # 1. Load the image using OpenCV (usually expected as HWC BGR NumPy array)
+        image_bgr = cv2.imread(image_path)
+        if image_bgr is None:
+            print(f"  Error loading image {image_path} with OpenCV")
+            return None, np.nan
+        # Convert to RGB for the model if needed (check mask_generator requirements)
+        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        
     except Exception as e:
-        print(f"  Error loading image {image_path}: {e}")
+        print(f"  Error loading/processing image {image_path}: {e}")
         return None, np.nan
         
     try:
-        # 2. Preprocess image and prepare inputs
-        # Use processor for automatic mask generation prompt if available
-        # The specific prompt might vary depending on the SAM2 version/HF implementation
-        inputs = processor(images=raw_image, return_tensors="pt").to(device)
-        
-        # 3. Run model prediction - Disable gradient calculation for inference
-        with torch.no_grad():
-             # Adjust generation parameters as needed for automatic mask generation
-             # Check the specific model's documentation on Hugging Face Hub
-            outputs = model.generate(**inputs, max_new_tokens=256) # Example, might need adjustment
-            
-        # 4. Post-process output to get masks and scores
-        # This part is HIGHLY dependent on the specific SAM2 model output structure
-        # Check model documentation for how masks and scores are returned
-        # Example assumes processor.post_process_segmentation exists and works like this:
-        segmentation_result = processor.post_process_segmentation(outputs, target_sizes=[raw_image.size[::-1]])[0]
-        
-        masks = segmentation_result['masks'] # Assumes boolean [N, H, W] tensor
-        scores = segmentation_result['scores'] # Assumes [N] tensor
-        
-        if masks is None or scores is None or len(masks) == 0:
+        # 2. Generate masks
+        # Ensure model is in eval mode and use appropriate context managers
+        mask_generator.model.eval()
+        with torch.inference_mode(), torch.autocast(device, dtype=torch.bfloat16): # Use bfloat16 as per README
+            # The output 'masks' is typically a list of dictionaries
+            generated_data = mask_generator.generate(image_rgb)
+
+        if not generated_data:
             print(f"  Warning: No masks generated for {os.path.basename(image_path)}")
             return None, np.nan
-            
-        # Select the mask with the highest predicted IoU score
-        best_idx = torch.argmax(scores).item()
-        best_mask_tensor = masks[best_idx] # [H, W] boolean tensor
-        best_score = scores[best_idx].item()
+
+        # 3. Select the best mask (e.g., highest predicted IoU)
+        # Sort masks by 'predicted_iou' in descending order
+        sorted_masks = sorted(generated_data, key=lambda x: x['predicted_iou'], reverse=True)
+        best_mask_info = sorted_masks[0]
         
-        # Convert to NumPy array (uint8, 0/1)
-        pred_mask_np = best_mask_tensor.cpu().numpy().astype(np.uint8)
-        
-        # print(f"  Prediction complete. Best score: {best_score:.4f}")
-        return pred_mask_np, best_score
+        best_mask_np = best_mask_info['segmentation'] # This should be a HxW boolean NumPy array
+        best_score = best_mask_info['predicted_iou']
+
+        # Convert boolean mask to uint8 (0/1)
+        pred_mask_out = best_mask_np.astype(np.uint8)
+
+        # print(f"  Mask generation complete. Best score: {best_score:.4f}")
+        return pred_mask_out, best_score
         
     except Exception as e:
-        print(f"  Error during prediction or post-processing for {image_path}: {e}")
+        print(f"  Error during automatic mask generation for {image_path}: {e}")
         # import traceback
         # traceback.print_exc() # Uncomment for detailed error traceback
         return None, np.nan
@@ -122,43 +143,49 @@ def load_mask(path: str) -> np.ndarray:
     # Convert to binary (0 or 1) - Assumes mask is 0 and non-zero (e.g., 255)
     # Adjust threshold (e.g., 0 or 127) if masks use different values
     _, binary_mask = cv2.threshold(mask, 1, 1, cv2.THRESH_BINARY) # Threshold at 1
-    # Alternatively, if mask is already 0/1: binary_mask = mask
     return binary_mask.astype(np.uint8)
 
 # --- Main Pipeline Function --- 
 
 def run_evaluation_pipeline(config: dict):
     """
-    Runs the full evaluation pipeline based on the provided configuration dictionary.
+    Runs the full evaluation pipeline based on the provided configuration dictionary,
+    using the official sam2 library loaded via Hugging Face ID.
 
     Args:
         config (dict): A dictionary containing configuration parameters:
-            - model_id (str): Hugging Face ID of the SAM2 model (e.g., 'facebook/sam2-huge').
+            - model_hf_id (str): Hugging Face ID of the SAM2 model (e.g., 'facebook/sam2-hiera-large').
             - data_list_path (str): Path to the JSON file listing data items.
             - image_base_dir (str): Base directory containing input images.
             - gt_mask_base_dir (str): Base directory containing ground truth masks.
             - output_path (str): Path to save the resulting CSV file.
             - bf1_tolerance (int, optional): Pixel tolerance for BF1 calc. Defaults to 2.
+            - generator_config (dict, optional): Configuration for SamAutomaticMaskGenerator.
+                                                Overrides defaults if provided.
             - ... (other config params like degradation level can be added)
     """
 
-    print("--- Starting SAM2 Evaluation Pipeline --- ")
+    print("--- Starting SAM2 Evaluation Pipeline (using sam2 library + HF Hub) --- ")
     print(f"Configuration: {config}")
 
     # --- Configuration Validation ---
-    required_keys = ['model_id', 'data_list_path', 'image_base_dir', 'gt_mask_base_dir', 'output_path']
+    # Ensure model_hf_id is present instead of model_id/model_path
+    required_keys = ['model_hf_id', 'data_list_path', 'image_base_dir', 'gt_mask_base_dir', 'output_path']
     for key in required_keys:
         if key not in config:
             print(f"Error: Missing required key in configuration: '{key}'")
             return
 
-    # --- Load Model (Hugging Face) ---
-    global model, processor # Use global vars defined earlier
-    # Load model only once if not already loaded
-    if model is None or processor is None:
-        model, processor = load_sam2_model(config['model_id'])
-        if model is None or processor is None: # Check if loading failed
-            print("Error: Failed to load model/processor. Exiting.")
+    # --- Load Model & Generator ---
+    global predictor, mask_generator # Use global vars defined earlier
+    # Load only once if not already loaded
+    if predictor is None or mask_generator is None:
+        predictor, mask_generator = load_sam2_predictor_and_generator(
+            config['model_hf_id'], 
+            config.get('generator_config') # Pass optional generator config
+        )
+        if predictor is None or mask_generator is None: # Check if loading failed
+            print("Error: Failed to load predictor or initialize generator. Exiting.")
             return
 
     # --- Load Data List ---
@@ -211,12 +238,12 @@ def run_evaluation_pipeline(config: dict):
             print(f"Warning: Skipping item ID '{image_id}'. Ground truth mask not found: {gt_mask_full_path}")
             continue
 
-        # --- Model Inference (Hugging Face) ---
-        pred_mask, sam2_score = predict_mask(model, processor, image_full_path)
+        # --- Model Inference (Automatic Mask Generation) ---
+        pred_mask, sam2_score = predict_auto_mask(mask_generator, image_full_path)
         
         if pred_mask is None:
-            print(f"Warning: Skipping item ID '{image_id}' due to prediction error.")
-            # Optionally record failure with NaN metrics
+            print(f"Warning: Skipping item ID '{image_id}' due to mask generation error.")
+            # Record failure 
             results.append({
                 "image_id": image_id,
                 "degradation": degradation_info,
@@ -225,7 +252,7 @@ def run_evaluation_pipeline(config: dict):
                 "sam2_score": np.nan,
                 "image_path": image_rel_path,
                 "gt_mask_path": gt_mask_rel_path,
-                "status": "Prediction Failed"
+                "status": "Mask Generation Failed"
             })
             continue
 
@@ -234,13 +261,13 @@ def run_evaluation_pipeline(config: dict):
             gt_mask = load_mask(gt_mask_full_path)
             if gt_mask is None:
                 print(f"Warning: Skipping item ID '{image_id}' due to GT mask loading error (load_mask returned None).")
-                 # Optionally record failure with NaN metrics
+                 # Record failure
                 results.append({
                     "image_id": image_id,
                     "degradation": degradation_info,
                     "iou": np.nan,
                     "bf1": np.nan,
-                    "sam2_score": sam2_score, # Might have score even if GT fails
+                    "sam2_score": sam2_score, # Score is from prediction step
                     "image_path": image_rel_path,
                     "gt_mask_path": gt_mask_rel_path,
                     "status": "GT Load Failed"
@@ -248,7 +275,7 @@ def run_evaluation_pipeline(config: dict):
                 continue
         except Exception as e:
              print(f"Warning: Skipping item ID '{image_id}' due to exception during GT mask loading: {e}")
-             # Optionally record failure with NaN metrics
+             # Record failure
              results.append({
                     "image_id": image_id,
                     "degradation": degradation_info,
@@ -263,9 +290,9 @@ def run_evaluation_pipeline(config: dict):
 
         # --- Calculate Metrics ---
         try:
-            # Ensure masks are suitable type (e.g., uint8 0/1 or bool)
+            # Ensure masks are uint8 (0/1)
             iou = calculate_miou(pred_mask.astype(bool), gt_mask.astype(bool))
-            bf1 = calculate_boundary_f1(pred_mask.astype(np.uint8), gt_mask.astype(np.uint8), tolerance_px=bf1_tolerance)
+            bf1 = calculate_boundary_f1(pred_mask, gt_mask, tolerance_px=bf1_tolerance)
             status = "Success"
         except Exception as e:
             print(f"Warning: Metrics calculation failed for item ID '{image_id}': {e}")
@@ -280,8 +307,8 @@ def run_evaluation_pipeline(config: dict):
             "degradation": degradation_info,
             "iou": iou,
             "bf1": bf1,
-            "sam2_score": sam2_score, # Already fetched during prediction
-            "image_path": image_rel_path, # Store relative paths for reference
+            "sam2_score": sam2_score, # From prediction step
+            "image_path": image_rel_path, 
             "gt_mask_path": gt_mask_rel_path,
             "status": status
         })
@@ -339,5 +366,5 @@ def run_evaluation_pipeline(config: dict):
 # It does not run the pipeline automatically when executed directly.
 # Example of how to call it (in another file):
 # from sam2_eval_pipeline import run_evaluation_pipeline
-# config = { ... } # Load or define config dictionary
+# config = { 'model_hf_id': 'facebook/sam2-hiera-large', ... } # Load or define config dictionary
 # run_evaluation_pipeline(config)

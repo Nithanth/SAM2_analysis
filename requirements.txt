@@ -1,31 +1,30 @@
-# Core Libraries
-numpy>=1.21.0
-pandas>=1.3.0
-opencv-python>=4.5.0
-Pillow>=9.0.0
-scikit-image>=0.19.0
-tqdm
+# Core Evaluation Dependencies
 opencv-python
 numpy
 pandas
-tqdm
-# Added for SAM2 model loading and execution
-torch
-transformers
-accelerate
-Pillow
+tqdm # Progress bars
+scikit-image # Used by some metric calculations if added later
 
-# PyTorch (for SAM2 & potential baselines)
-# Check compatibility with your CUDA version if using GPU
-torch>=2.0.0
-transformers
-accelerate
-torchvision>=0.15.0
+# SAM2 Dependencies
+# 1. PyTorch & Torchvision (Ensure version >= 2.5.1 and >= 0.20.1 respectively)
+#    Check compatibility with your CUDA version if using GPU
+#    Install following official PyTorch instructions: https://pytorch.org/
+torch>=2.5.1
+torchvision>=0.20.1
 
-# LoRA (as per project plan)
-# peft @ git+https://github.com/huggingface/peft.git
-# Note: You might install a specific version/commit if needed
-peft
+# 2. Official sam2 library
+#    MUST be installed separately by cloning the repo and running 'pip install -e .'
+#    See: https://github.com/facebookresearch/sam2?tab=readme-ov-file#installation
+#    (Requirement cannot be listed directly here as it's not on PyPI)
+
+# 3. Hugging Face Hub (Used by sam2 library for model download)
+huggingface_hub
+
+# 4. Optional but recommended by sam2 for some features/performance
+accelerate 
+
+# 5. Image Loading
+Pillow # Often preferred by Hugging Face models, though cv2 is also used
 
 # Visualization (optional but recommended)
 matplotlib>=3.5.0
