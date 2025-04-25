@@ -7,12 +7,12 @@ Created on Sun Apr 13 15:33:35 2025
 """
 
 #%%
-
 from pycocotools.coco import COCO
 import requests
 import os
 import json
 import random
+import numpy as np
 
 # Path to annotation file
 annotation_file = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/annotations/instances_train2017.json'
@@ -20,20 +20,45 @@ annotation_file = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Gene
 # Initialize COCO API
 coco = COCO(annotation_file)
 
-# Get all image ids and sample 100
-img_ids = coco.getImgIds()
-sampled_img_ids = random.sample(img_ids, 100)
+# Find all image ids that have exactly one annotation with a non‐empty 'segmentation'
+valid_img_ids = []
+for img_id in coco.getImgIds():
+    # 1) get all annotation IDs for this image
+    ann_ids = coco.getAnnIds(imgIds=[img_id], iscrowd=None)
+    if not ann_ids:
+        # no annotations at all → skip
+        continue
+
+    # 2) load all the ann dicts
+    anns = coco.loadAnns(ann_ids)
+
+    # 3) turn each ann into a single H×W mask
+    masks = [ coco.annToMask(ann) for ann in anns ]
+
+    # 4) union them into one mask (or create an empty one if none)
+    if masks:
+        unified = np.logical_or.reduce(masks).astype(np.uint8)
+    else:
+        img_info = coco.loadImgs([img_id])[0]
+        h, w    = img_info['height'], img_info['width']
+        unified = np.zeros((h, w), dtype=np.uint8)
+
+    # 5) only keep images whose unified mask actually covers something
+    if unified.sum() > 0:
+        valid_img_ids.append(img_id)
+
+# Sample up to 100 of these
+n_samples = min(100, len(valid_img_ids))
+sampled_img_ids = random.sample(valid_img_ids, n_samples)
 images = coco.loadImgs(sampled_img_ids)
 
-# Directory to save images
+# Directories to save
 save_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/images'
-os.makedirs(save_dir, exist_ok=True)
-
-# Directory to save annotations
 anno_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/image_annotations'
+os.makedirs(save_dir, exist_ok=True)
 os.makedirs(anno_dir, exist_ok=True)
 
-# Download and save images and their annotations
+# Download images and save their single‐mask annotation
 for img in images:
     # Download image
     img_data = requests.get(img['coco_url']).content
@@ -41,18 +66,16 @@ for img in images:
     with open(img_path, 'wb') as handler:
         handler.write(img_data)
 
-    # Get annotations for this image
+    # Load the single annotation
     ann_ids = coco.getAnnIds(imgIds=img['id'], iscrowd=None)
-    anns = coco.loadAnns(ann_ids)
+    ann = coco.loadAnns(ann_ids)[0]
 
-    # Save annotations
+    # Save that one annotation
     ann_path = os.path.join(anno_dir, img['file_name'].replace('.jpg', '.json'))
     with open(ann_path, 'w') as f:
-        json.dump(anns, f, indent=2)
+        json.dump(ann, f, indent=2)
 
-    print(f"Saved: {img['file_name']} with {len(anns)} annotations")
-
-
+    print(f"Saved: {img['file_name']} with 1 segmentation mask")
 
 #%%
 import os
