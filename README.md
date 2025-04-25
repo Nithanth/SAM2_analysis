@@ -1,6 +1,8 @@
 # SAM2_analysis
 10623
-code_degradation (Mingjun)
+code_degradation.py: download images and annotations, degrade each image by four types and each type has 5 degradation parameters.
+code_json.py: generate a json document 
+code_segmentation_plot.py: plot the segmentation
 
 ## Setup
 
