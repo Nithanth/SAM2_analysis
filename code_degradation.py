@@ -8,39 +8,101 @@ Created on Sun Apr 13 15:33:35 2025
 
 #%%
 
-'''
 from pycocotools.coco import COCO
 import requests
 import os
+import json
+import random
 
-# Path to the annotation file
+# Path to annotation file
 annotation_file = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/annotations/instances_train2017.json'
 
-# Initialize COCO api for instance annotations
+# Initialize COCO API
 coco = COCO(annotation_file)
 
-# Get all image ids
+# Get all image ids and sample 100
 img_ids = coco.getImgIds()
-images = coco.loadImgs(img_ids)
-
+sampled_img_ids = random.sample(img_ids, 100)
+images = coco.loadImgs(sampled_img_ids)
 
 # Directory to save images
 save_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/images'
 os.makedirs(save_dir, exist_ok=True)
 
-# Download images
+# Directory to save annotations
+anno_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/image_annotations'
+os.makedirs(anno_dir, exist_ok=True)
 
+# Download and save images and their annotations
 for img in images:
+    # Download image
     img_data = requests.get(img['coco_url']).content
-    with open(os.path.join(save_dir, img['file_name']), 'wb') as handler:
+    img_path = os.path.join(save_dir, img['file_name'])
+    with open(img_path, 'wb') as handler:
         handler.write(img_data)
-'''
+
+    # Get annotations for this image
+    ann_ids = coco.getAnnIds(imgIds=img['id'], iscrowd=None)
+    anns = coco.loadAnns(ann_ids)
+
+    # Save annotations
+    ann_path = os.path.join(anno_dir, img['file_name'].replace('.jpg', '.json'))
+    with open(ann_path, 'w') as f:
+        json.dump(anns, f, indent=2)
+
+    print(f"Saved: {img['file_name']} with {len(anns)} annotations")
+
 
 
 #%%
 import os
-save_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/images'
+save_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/pic'
 os.makedirs(save_dir, exist_ok=True)
+
+
+#%%
+import os
+import random
+import shutil
+from PIL import Image
+
+# Directories
+input_dir       = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/images'
+anno_input_dir  = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/image_annotations'
+output_dir      = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/pic'
+
+# Make sure output directory exists
+os.makedirs(output_dir, exist_ok=True)
+
+# List all image files
+image_files = [
+    f for f in os.listdir(input_dir)
+    if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+]
+
+# Sample 100 images
+sampled_images = random.sample(image_files, 100)
+
+for idx, filename in enumerate(sampled_images, start=1):
+    # --- Copy & rename image ---
+    input_path  = os.path.join(input_dir, filename)
+    output_path = os.path.join(output_dir, f"{idx}.jpg")
+    
+    img = Image.open(input_path).convert('RGB')
+    img.save(output_path, 'JPEG')
+    
+    # --- Copy & rename annotation ---
+    base_name         = os.path.splitext(filename)[0]
+    anno_filename     = base_name + '.json'
+    anno_input_path   = os.path.join(anno_input_dir, anno_filename)
+    anno_output_path  = os.path.join(output_dir, f"{idx}_annotations.json")
+    
+    if os.path.exists(anno_input_path):
+        shutil.copyfile(anno_input_path, anno_output_path)
+        print(f"[{idx}] Saved image and {idx}_annotations.json")
+    else:
+        print(f"[{idx}] WARNING: Annotation for {filename} not found.")
+
 
 
 #%%
@@ -50,51 +112,129 @@ import numpy as np
 from PIL import Image, ImageEnhance
 import os
 
-# Input and output directories
-input_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/images'  # original images
-output_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/degraded'
+input_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/pic'  # original images
+output_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/pic_degraded'
 os.makedirs(output_dir, exist_ok=True)
 
-# Subfolders for different types of degradation
-degradations = ['gaussian_blur', 'motion_blur', 'jpeg_compression', 'low_contrast']
-for d in degradations:
+param_grid = {
+    "gaussian_blur": {
+        "kernel_size": [3, 5, 11, 21, 31]  # odd integers only
+    },
+    "motion_blur": {
+        "kernel_size": [5, 15, 25, 35, 45]  # odd integers only
+    },
+    "jpeg_compression": {
+        "quality": [100, 80, 60, 40, 20]  # 0–100 (higher = better)
+    },
+    "low_contrast": {
+        "factor": [1.0, 0.8, 0.6, 0.4, 0.2]  # 1.0 = no change
+    },
+}
+
+
+for d in param_grid:
     os.makedirs(os.path.join(output_dir, d), exist_ok=True)
 
-def apply_gaussian_blur(image, kernel_size=15):  # Increased kernel_size
-    return cv2.GaussianBlur(image, (kernel_size, kernel_size), 0)
+def apply_gaussian_blur(img, kernel_size):
+    return cv2.GaussianBlur(img, (kernel_size, kernel_size), 0)
 
-def apply_motion_blur(image, kernel_size=25):  # Increased kernel_size
-    kernel = np.zeros((kernel_size, kernel_size))
-    kernel[int((kernel_size-1)/2), :] = np.ones(kernel_size)
-    kernel /= kernel_size
-    return cv2.filter2D(image, -1, kernel)
+def apply_motion_blur(img, kernel_size):
+    k = np.zeros((kernel_size, kernel_size), dtype=np.float32)
+    k[kernel_size // 2, :] = 1.0
+    k /= kernel_size
+    return cv2.filter2D(img, -1, k)
 
-def apply_jpeg_compression(image, quality=5):  # Decreased quality
-    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
-    _, encimg = cv2.imencode('.jpg', image, encode_param)
-    return cv2.imdecode(encimg, 1)
+def apply_jpeg_compression(img, quality):
+    _, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+    return cv2.imdecode(enc, 1)
 
-def apply_low_contrast(image, factor=0.3):  # Decreased factor
-    pil_img = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    enhancer = ImageEnhance.Contrast(pil_img)
-    low_contrast_img = enhancer.enhance(factor)
-    return cv2.cvtColor(np.array(low_contrast_img), cv2.COLOR_RGB2BGR)
+def apply_low_contrast(img, factor):
+    pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    enhanced = ImageEnhance.Contrast(pil).enhance(factor)
+    return cv2.cvtColor(np.array(enhanced), cv2.COLOR_RGB2BGR)
 
-# Loop through all images and apply degradations
+dispatch = {
+    "gaussian_blur":   apply_gaussian_blur,
+    "motion_blur":     apply_motion_blur,
+    "jpeg_compression":apply_jpeg_compression,
+    "low_contrast":    apply_low_contrast,
+}
+
 for filename in os.listdir(input_dir):
-    if filename.endswith('.jpg'):
-        img_path = os.path.join(input_dir, filename)
-        image = cv2.imread(img_path)
+    if not filename.lower().endswith((".jpg", ".jpeg", ".png")):
+        continue
 
-        # Apply and save each degradation
-        degraded = {
-            'gaussian_blur': apply_gaussian_blur(image),
-            'motion_blur': apply_motion_blur(image),
-            'jpeg_compression': apply_jpeg_compression(image),
-            'low_contrast': apply_low_contrast(image),
-        }
+    base, ext = os.path.splitext(filename)
+    
+    try:
+        i = int(base)  
+    except ValueError:
+        print(f"Skipping non-numeric filename: {filename}")
+        continue
 
-        for d_type, d_img in degraded.items():
-            out_path = os.path.join(output_dir, d_type, filename)
-            cv2.imwrite(out_path, d_img)
+    img = cv2.imread(os.path.join(input_dir, filename))
+
+    for d_type, params in param_grid.items():
+        func = dispatch[d_type]
+
+        for param_name, values in params.items():
+            for val in values:
+                degraded = func(img, val)
+
+                out_name = f"{i}_{d_type}_{val}.jpg"
+                out_path = os.path.join(output_dir, d_type, out_name)
+                cv2.imwrite(out_path, degraded)
+
+
+
+#%%
+import os
+import cv2
+import matplotlib.pyplot as plt
+import random
+
+# Paths
+input_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/images'
+output_dir = '/Users/mingjunsun/Library/CloudStorage/Dropbox/25 Spring/Generative AI/project/dataset/degraded'
+degradations = ['gaussian_blur', 'motion_blur', 'jpeg_compression', 'low_contrast']
+
+# Randomly select three image filenames
+all_filenames = [f for f in os.listdir(input_dir) if f.endswith('.jpg')]
+selected_filenames = random.sample(all_filenames, 3)
+
+# Titles for the columns
+titles = ['Original'] + [d.replace('_', ' ').title() for d in degradations]
+
+# Plot
+plt.figure(figsize=(20, 12))
+
+for row_idx, filename in enumerate(selected_filenames):
+    # Load original image
+    orig_path = os.path.join(input_dir, filename)
+    orig_img = cv2.imread(orig_path)
+    orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
+
+    # Load degraded images
+    degraded_imgs = []
+    for d in degradations:
+        d_path = os.path.join(output_dir, d, filename)
+        d_img = cv2.imread(d_path)
+        d_img = cv2.cvtColor(d_img, cv2.COLOR_BGR2RGB)
+        degraded_imgs.append(d_img)
+
+    # Combine original and degraded
+    images_to_show = [orig_img] + degraded_imgs
+
+    # Plot this row
+    for col_idx, (img, title) in enumerate(zip(images_to_show, titles)):
+        idx = row_idx * 5 + col_idx + 1
+        plt.subplot(3, 5, idx)
+        plt.imshow(img)
+        if row_idx == 0:
+            plt.title(title, fontsize=30)  # Increased font size
+        plt.axis('off')
+
+plt.tight_layout()
+plt.show()
+
 
