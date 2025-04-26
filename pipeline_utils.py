@@ -131,16 +131,21 @@ def decode_coco_rle(rle_obj: dict) -> np.ndarray | None:
 def load_sam2_evaluation_data(data_path: str, image_base_dir: str) -> list[dict] | None:
     """Loads the evaluation data map JSON, decodes ground truth masks, and prepares items.
 
-    Expects a JSON structure like:
+    Expects a JSON structure like (nested `versions`):
     {
         "image_id_1": {
             "ground_truth_rle": { "size": [h, w], "counts": "..." },
             "versions": {
-                "version_key_1": { "filepath": "relative/path/img1_v1.jpg", "level": 0 },
-                "version_key_2": { "filepath": "relative/path/img1_v2.jpg", "level": 1 }
+                "original": { "filepath": "images/1.jpg", "level": 0, "degradation_type": "original" },
+                "gaussian_blur": {
+                    "3": { "filepath": "pic_degraded/gaussian_blur/1_gaussian_blur_3.jpg", "level": 3, "degradation_type": "gaussian_blur" },
+                    "5": { "filepath": "pic_degraded/gaussian_blur/1_gaussian_blur_5.jpg", "level": 5, "degradation_type": "gaussian_blur" }
+                },
+                "jpeg_compression": {
+                    "80": { "filepath": "pic_degraded/jpeg_compression/1_jpeg_compression_80.jpg", "level": 80, "degradation_type": "jpeg_compression" }
+                }
             }
-        },
-        ...
+        }
     }
 
     Args:
@@ -187,27 +192,47 @@ def load_sam2_evaluation_data(data_path: str, image_base_dir: str) -> list[dict]
             print(f"Warning: Missing or invalid 'versions' dictionary for image_id {image_id}. Skipping this image.")
             continue
             
-        # Iterate through each version (e.g., degradation level) for the current image
-        for version_key, version_data in image_data['versions'].items():
-            if not isinstance(version_data, dict) or 'filepath' not in version_data or 'level' not in version_data:
-                print(f"Warning: Invalid version data for image_id {image_id}, version_key {version_key}. Skipping this version.")
-                continue
-                
-            relative_path = version_data['filepath']
-            level = version_data['level']
-            
-            # Construct the full, absolute path to the image file
-            absolute_image_path = os.path.abspath(os.path.join(image_base_dir, relative_path))
-            
-            # Add the processed item to the list
-            processed_items.append({
-                'image_id': image_id,
-                'version_key': version_key,
-                'level': level,
-                'image_filepath': absolute_image_path,
-                'gt_mask': gt_mask # Use the same decoded GT mask for all versions of this image
-            })
+        # Iterate through each version (original or degraded) for the current image.
+        # Handle both leaf dictionaries (original) and nested dictionaries (deg_type -> level -> data)
+        versions_dict = image_data['versions']
 
+        for v_key, v_value in versions_dict.items():
+            # Case 1: Leaf dictionary (e.g., 'original')
+            if isinstance(v_value, dict) and 'filepath' in v_value:
+                relative_path = v_value['filepath']
+                level = v_value.get('level', 0)
+                absolute_image_path = os.path.abspath(os.path.join(image_base_dir, relative_path))
+                processed_items.append({
+                    'image_id': image_id,
+                    'version_key': v_key,
+                    'level': level,
+                    'image_filepath': absolute_image_path,
+                    'gt_mask': gt_mask,
+                })
+                continue
+
+            # Case 2: Nested dict of levels under a degradation type
+            if isinstance(v_value, dict):
+                deg_type = v_key
+                for lvl_key, lvl_data in v_value.items():
+                    if not isinstance(lvl_data, dict) or 'filepath' not in lvl_data or 'level' not in lvl_data:
+                        print(f"Warning: Invalid nested version data for image_id {image_id}, deg_type {deg_type}, level {lvl_key}. Skipping.")
+                        continue
+                    relative_path = lvl_data['filepath']
+                    level = lvl_data['level']
+                    absolute_image_path = os.path.abspath(os.path.join(image_base_dir, relative_path))
+                    # Compose a unique version key similar to previous flat format, e.g., 'gaussian_blur_3'
+                    version_key = f"{deg_type}_{lvl_key}"
+                    processed_items.append({
+                        'image_id': image_id,
+                        'version_key': version_key,
+                        'level': level,
+                        'image_filepath': absolute_image_path,
+                        'gt_mask': gt_mask,
+                    })
+            else:
+                print(f"Warning: Unrecognized version format for image_id {image_id}, key {v_key}. Skipping.")
+                
     if not processed_items:
         print("Warning: No valid evaluation items were processed from the data map.")
         return None # Or return empty list? Returning None indicates a potential issue.

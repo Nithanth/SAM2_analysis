@@ -9,8 +9,13 @@ structure expected by `sam2_eval_pipeline.py`:
     "ground_truth_rle": {"size": [H, W], "counts": "..."},
     "versions": {
       "original":           {"filepath": "images/<id>.jpg", "level": 0, "degradation_type": "original"},
-      "gaussian_blur_5":    {"filepath": "pic_degraded/gaussian_blur/<id>_gaussian_blur_5.jpg", "level": 5,  "degradation_type": "gaussian_blur"},
-      ...
+      "gaussian_blur": {
+        "5": {"filepath": "pic_degraded/gaussian_blur/<id>_gaussian_blur_5.jpg", "level": 5,  "degradation_type": "gaussian_blur"},
+        ...
+      },
+      "jpeg_compression": {
+        "80": {"filepath": "pic_degraded/jpeg_compression/<id>_jpeg_compression_80.jpg", "level": 80,  "degradation_type": "jpeg_compression"}
+      }
     }
   }
 }
@@ -62,37 +67,52 @@ def load_first_polygon(anno_path: Path) -> List[float]:
         else data if isinstance(data, list) else [data]
     )
 
+    # Extract segmentation data (supports polygon or pre-encoded RLE)
+    polygon: List[float] = []
+    rle_obj: Dict[str, Any] = {}
     for ann in anns:
         seg = ann.get("segmentation")
-        if seg:
-            # segmentation can be list(list) for polygon or RLE dict
-            if isinstance(seg, list):
-                return seg[0] if isinstance(seg[0], list) else seg
-            elif isinstance(seg, dict):
-                # Already compressed RLE – return empty, we will use as-is later
-                return []
-    return []
+        if not seg:
+            continue
+        # COCO segmentation can be
+        #   1) list[list[float]] or list[float]  → polygon coordinates
+        #   2) dict                          → already-compressed RLE
+        if isinstance(seg, list):
+            polygon = seg[0] if isinstance(seg[0], list) else seg
+        elif isinstance(seg, dict):
+            rle_obj = seg
+        break  # use first valid annotation only
+
+    # --- Ground-Truth RLE (lossless) ---
+    if rle_obj:
+        # Ensure counts stored as str for JSON
+        if isinstance(rle_obj.get("counts"), bytes):
+            rle_obj["counts"] = rle_obj["counts"].decode("ascii")
+        return rle_obj
+    else:
+        return coco_poly_to_rle(polygon, anno_path) if polygon else {}
 
 
-def coco_poly_to_rle(segmentation: List, height: int, width: int) -> Dict:
+def coco_poly_to_rle(segmentation: List, anno_path: Path) -> Dict:
     """Convert COCO polygon segmentation format to Run-Length Encoding (RLE).
 
     Args:
         segmentation: List of polygon coordinates [x1, y1, x2, y2, ...].
-        height: Image height.
-        width: Image width.
+        anno_path: Path to annotation JSON file.
 
     Returns:
         RLE dictionary {'counts': [...], 'size': [h, w]}.
     """
     if not segmentation:
         return {}
-    rle_list = mask_utils.frPyObjects([segmentation], height, width)
+    with Image.open(anno_path.parent / anno_path.stem.replace("_annotations", ".jpg")) as im:
+        w, h = im.size  # PIL gives (width, height)
+    rle_list = mask_utils.frPyObjects([segmentation], h, w)
     rle = mask_utils.merge(rle_list) if isinstance(rle_list, list) else rle_list
     # `counts` may be bytes; convert to str for JSON serialisation
     if isinstance(rle["counts"], bytes):
         rle["counts"] = rle["counts"].decode("ascii")
-    return {"size": [height, width], "counts": rle["counts"]}
+    return {"size": [h, w], "counts": rle["counts"]}
 
 
 def build_degradation_map() -> Dict[str, Dict]:
@@ -105,7 +125,7 @@ def build_degradation_map() -> Dict[str, Dict]:
     Returns:
         A dictionary where keys are base image identifiers (e.g., '1') and
         values are dictionaries containing 'image_path', 'gt_mask_rle', and
-        a flat 'versions' dictionary.
+        a nested 'versions' dictionary.
     """
     degradation_map = {}
 
@@ -136,22 +156,32 @@ def build_degradation_map() -> Dict[str, Dict]:
             else data if isinstance(data, list) else [data]
         )
 
-        # Extract segmentation data (assuming it's polygon format)
+        # Extract segmentation data (supports polygon or pre-encoded RLE)
+        polygon: List[float] = []
+        rle_obj: Dict[str, Any] = {}
         for ann in anns:
             seg = ann.get("segmentation")
-            if seg:
-                # segmentation can be list(list) for polygon or RLE dict
-                if isinstance(seg, list):
-                    polygon = seg[0] if isinstance(seg[0], list) else seg
-                elif isinstance(seg, dict):
-                    # Already compressed RLE – return empty, we will use as-is later
-                    polygon = []
-                break
+            if not seg:
+                continue
+            # COCO segmentation can be
+            #   1) list[list[float]] or list[float]  → polygon coordinates
+            #   2) dict                          → already-compressed RLE
+            if isinstance(seg, list):
+                polygon = seg[0] if isinstance(seg[0], list) else seg
+            elif isinstance(seg, dict):
+                rle_obj = seg
+            break  # use first valid annotation only
 
-        # Convert polygon segmentation to RLE format
-        gt_rle = coco_poly_to_rle(polygon, h, w) if polygon else {}
+        # --- Ground-Truth RLE (lossless) ---
+        if rle_obj:
+            # Ensure counts stored as str for JSON
+            if isinstance(rle_obj.get("counts"), bytes):
+                rle_obj["counts"] = rle_obj["counts"].decode("ascii")
+            gt_rle = rle_obj
+        else:
+            gt_rle = coco_poly_to_rle(polygon, anno_path) if polygon else {}
 
-        # --- Degraded Versions --- Find all corresponding degraded images
+        # --- Degraded Versions --- Build nested structure
         versions: Dict[str, Any] = {
             "original": {
                 "filepath": str(Path("images") / img_path.name),
@@ -160,22 +190,26 @@ def build_degradation_map() -> Dict[str, Dict]:
             }
         }
 
-        # Scan degradation folders
+        # Scan degradation folders to populate nested dicts
         for deg_type in DEGRADATIONS:
             folder = DEG_DIR / deg_type
             pattern = f"{img_id}_{deg_type}_*.jpg"
             for file in folder.glob(pattern):
-                # extract level from filename using split on last underscore
+                # Extract level/parameter from filename (everything after last underscore)
                 level_str = file.stem.rsplit("_", 1)[1]
                 try:
-                    level = float(level_str) if "." in level_str else int(level_str)
+                    level_val: Any = float(level_str) if "." in level_str else int(level_str)
                 except ValueError:
                     print(f"[Warning] Could not parse level from {file.name}")
                     continue
-                key = f"{deg_type}_{level_str}"
-                versions[key] = {
+
+                # Ensure the degradation type dict exists
+                if deg_type not in versions:
+                    versions[deg_type] = {}
+
+                versions[deg_type][level_str] = {
                     "filepath": str(Path("pic_degraded") / deg_type / file.name),
-                    "level": level,
+                    "level": level_val,
                     "degradation_type": deg_type,
                 }
 
