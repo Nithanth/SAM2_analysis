@@ -5,8 +5,8 @@ import numpy as np
 import torch
 import pycocotools.mask # For RLE decoding
 import json # Added
-from sam2_predictor import SamPredictor
-from sam2_image_mask_generator import SamAutomaticMaskGenerator
+from sam2.sam2_image_predictor import SAM2ImagePredictor
+from sam2.automatic_mask_generator import SamAutomaticMaskGenerator
 
 # IMPORTANT: Requires sam2 library installation
 try:
@@ -47,7 +47,7 @@ def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict):
                           SamAutomaticMaskGenerator (points_per_side, etc.).
 
     Returns:
-        A tuple containing (SamPredictor, SamAutomaticMaskGenerator), or (None, None)
+        A tuple containing (SAM2ImagePredictor, SamAutomaticMaskGenerator), or (None, None)
         if loading fails.
     """
     global _cached_model, _cached_generator_config, _cached_predictor, _cached_generator
@@ -62,7 +62,7 @@ def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict):
         # Load the model from Hugging Face Hub
         model = AutoModel.from_pretrained(model_hf_id)
         # Create the predictor
-        predictor = SamPredictor(model)
+        predictor = SAM2ImagePredictor(model)
         # Create the mask generator with specified configuration
         generator = SamAutomaticMaskGenerator(predictor.model, **generator_config)
         
@@ -84,11 +84,11 @@ def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict):
         return None, None
 
 # --- Prediction --- 
-def predict_auto_mask(predictor: SamPredictor, generator: SamAutomaticMaskGenerator, image_rgb: np.ndarray, image_path_for_logging: str = "") -> list | None:
+def predict_auto_mask(predictor: SAM2ImagePredictor, generator: SamAutomaticMaskGenerator, image_rgb: np.ndarray, image_path_for_logging: str = "") -> list | None:
     """Generates masks for an entire image using SamAutomaticMaskGenerator.
 
     Args:
-        predictor: The initialized SamPredictor.
+        predictor: The initialized SAM2ImagePredictor.
         generator: The initialized SamAutomaticMaskGenerator.
         image_rgb: The input image as a NumPy array in RGB format.
         image_path_for_logging: Optional image path string for error messages.
