@@ -172,3 +172,17 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Project Output
+output/
+
+# External Submodules (if managed by git submodule)
+external/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+tests/__pycache__/

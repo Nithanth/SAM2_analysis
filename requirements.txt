@@ -4,6 +4,7 @@ numpy
 pandas
 tqdm # Progress bars
 scikit-image # Used by some metric calculations if added later
+pycocotools # For decoding COCO RLE masks
 
 # SAM2 Dependencies
 # 1. PyTorch & Torchvision (Ensure version >= 2.5.1 and >= 0.20.1 respectively)
@@ -30,5 +31,5 @@ Pillow # Often preferred by Hugging Face models, though cv2 is also used
 matplotlib>=3.5.0
 seaborn>=0.11.0
 
-# Add other specific dependencies for SAM2 or baselines as needed
-# e.g., timm, detectron2, etc.
+# Testing
+pytest
