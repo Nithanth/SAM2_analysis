@@ -6,12 +6,12 @@ import torch
 import pycocotools.mask # For RLE decoding
 import json # Added
 from sam2.sam2_image_predictor import SAM2ImagePredictor
-from sam2.automatic_mask_generator import SamAutomaticMaskGenerator
+from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
 # IMPORTANT: Requires sam2 library installation
 try:
     from sam2.sam2_image_predictor import SAM2ImagePredictor
-    from sam2.automatic_mask_generator import SamAutomaticMaskGenerator
+    from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 except ImportError:
     print("Error: Could not import from the 'sam2' library.")
     print("Please ensure you have cloned the repo and installed it following the official README:")
@@ -21,7 +21,7 @@ except ImportError:
     print("  cd ..")
     # Set to None so checks later will fail gracefully
     SAM2ImagePredictor = None
-    SamAutomaticMaskGenerator = None
+    SAM2AutomaticMaskGenerator = None
     # Optionally raise an error: raise ImportError("SAM2 library not found or could not be imported.")
 
 # --- Globals / Caching --- 
@@ -34,7 +34,7 @@ _cached_predictor = None
 _cached_generator = None
 
 # --- Model Loading --- 
-def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict):
+def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict) -> tuple[SAM2ImagePredictor | None, SAM2AutomaticMaskGenerator | None]:
     """Loads the SAM2 model predictor and mask generator from Hugging Face.
 
     Uses a simple global cache to avoid reloading if called again with the 
@@ -44,10 +44,10 @@ def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict):
         model_hf_id: The Hugging Face identifier for the SAM2 model 
                      (e.g., 'facebook/sam2-hiera-large').
         generator_config: A dictionary containing parameters for the 
-                          SamAutomaticMaskGenerator (points_per_side, etc.).
+                          SAM2AutomaticMaskGenerator (points_per_side, etc.).
 
     Returns:
-        A tuple containing (SAM2ImagePredictor, SamAutomaticMaskGenerator), or (None, None)
+        A tuple containing (SAM2ImagePredictor, SAM2AutomaticMaskGenerator), or (None, None)
         if loading fails.
     """
     global _cached_model, _cached_generator_config, _cached_predictor, _cached_generator
@@ -64,7 +64,7 @@ def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict):
         # Create the predictor
         predictor = SAM2ImagePredictor(model)
         # Create the mask generator with specified configuration
-        generator = SamAutomaticMaskGenerator(predictor.model, **generator_config)
+        generator = SAM2AutomaticMaskGenerator(predictor.model, **generator_config)
         
         # Update cache
         _cached_model = model_hf_id
@@ -84,12 +84,12 @@ def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict):
         return None, None
 
 # --- Prediction --- 
-def predict_auto_mask(predictor: SAM2ImagePredictor, generator: SamAutomaticMaskGenerator, image_rgb: np.ndarray, image_path_for_logging: str = "") -> list | None:
-    """Generates masks for an entire image using SamAutomaticMaskGenerator.
+def predict_auto_mask(predictor: SAM2ImagePredictor, generator: SAM2AutomaticMaskGenerator, image_rgb: np.ndarray, image_path_for_logging: str = "") -> list | None:
+    """Generates masks for an entire image using SAM2AutomaticMaskGenerator.
 
     Args:
         predictor: The initialized SAM2ImagePredictor.
-        generator: The initialized SamAutomaticMaskGenerator.
+        generator: The initialized SAM2AutomaticMaskGenerator.
         image_rgb: The input image as a NumPy array in RGB format.
         image_path_for_logging: Optional image path string for error messages.
 
@@ -122,7 +122,7 @@ def decode_coco_rle(rle_obj: dict) -> np.ndarray | None:
     """
     try:
         # Use pycocotools to decode the RLE string/bytes into a binary mask
-        mask = mask_util.decode(rle_obj)
+        mask = pycocotools.mask.decode(rle_obj)
         return mask
     except Exception as e:
         print(f"Error decoding RLE object: {e}. RLE: {rle_obj}")
