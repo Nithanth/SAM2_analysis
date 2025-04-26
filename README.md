@@ -1,4 +1,5 @@
 # SAM2 Analysis Pipeline
+
 This project provides a framework for evaluating computer vision models, focusing on the **Segment Anything Model 2 (SAM2)**, released by Meta AI (FAIR) as a successor to the original SAM. SAM2 advances the state-of-the-art by unifying promptable segmentation capabilities for both **images and videos** within a single model.
 
 Architecturally, SAM2 builds upon its predecessor, employing powerful image encoders (like the **Hiera** architecture used in some variants) and a promptable mask decoder. The key innovation enabling efficient video processing is the introduction of a **memory bank**. This module allows the model to maintain and propagate context (such as object identities and locations) across consecutive video frames, enabling **real-time, consistent segmentation** without recomputing from scratch for every frame. This makes SAM2 significantly more efficient than previous models, particularly for video-based tasks.
