@@ -22,6 +22,30 @@ This simplification was made to streamline the mask matching and comparison proc
 
 The specific images and their corresponding ground truth masks (encoded in COCO RLE format) are referenced within the input JSON file provided to the evaluation pipeline (see `config/sam2_eval_config.json` for an example structure). This file acts as the central map linking image identifiers/paths to the necessary ground truth data for evaluation.
 
+The expected format for this mapping file (typically `data/degradation_map.json`) is:
+
+```json
+{
+  "<image_id>": {
+    "ground_truth_rle": {
+      "size": [H, W],    # Mask dimensions [height, width]
+      "counts": "..."     # COCO Run-Length Encoding string for the mask pixels
+    },
+    "versions": {
+      "original":           {"filepath": "images/<id>.jpg", "level": 0, "degradation_type": "original"},
+      "gaussian_blur": {
+        "5": {"filepath": "pic_degraded/gaussian_blur/<id>_gaussian_blur_5.jpg", "level": 5,  "degradation_type": "gaussian_blur"},
+        ...
+      },
+      "jpeg_compression": {
+        "80": {"filepath": "pic_degraded/jpeg_compression/<id>_jpeg_compression_80.jpg", "level": 80,  "degradation_type": "jpeg_compression"}
+      }
+    }
+  },
+  ...
+}
+```
+
 ## Prerequisites
 
 Before running the pipeline, ensure you have the following prerequisites installed and set up:
@@ -151,50 +175,7 @@ The primary script (`main.py`) takes a single argument (`--config`) pointing to 
 * `bf1_tolerance`: The tolerance in pixels used for the Boundary F1 score calculation.
 * `generator_config`: A dictionary containing parameters to configure the `SamAutomaticMaskGenerator` (see `sam2` library documentation for options like `points_per_side`, `pred_iou_thresh`, etc.).
 
-### Example `degradation_map.json`
-
-Below is a **minimal** example of the *data map* expected by `sam2_eval_pipeline`.
-Each top-level key is an **`image_id`** (any unique string).  For that image we
-provide a single **COCO RLE** ground-truth mask (`ground_truth_rle`) and one or
-more *versions* (original, degraded, etc.).  Paths inside `versions.*.filepath`
-are **relative to** the `image_base_dir` set in the config.
-
-```jsonc
-{
-  "img_001": {
-    "ground_truth_rle": {
-      "size": [480, 640],           // [height, width] of the mask / image
-      "counts": "eNrtWEkOwjAM..."   // regular COCO RLE string
-    },
-    "versions": {
-      "orig": {
-        "filepath": "images/img_001.jpg", // relative to image_base_dir
-        "level": 0                         // arbitrary numeric label
-      },
-      "jpeg_30": {
-        "filepath": "images/img_001_jpeg30.jpg",
-        "level": 30                        // e.g. JPEG quality factor
-      }
-    }
-  },
-  "img_002": {
-    "ground_truth_rle": { "size": [512, 512], "counts": "c6K..." },
-    "versions": {
-      "orig": { "filepath": "images/img_002.jpg", "level": 0 }
-    }
-  }
-}
-```
-
-Key rules:
-
-* `size` **must** match the height/width of every image version.
-* Add as many `versions` per image as you like; the pipeline processes each
-  independently but re-uses the same GT mask.
-* Extra fields (e.g. `bbox`, metadata) are ignored, so you can extend the schema
-  if needed.
-
-## Running the Evaluation
+### Running the Pipeline
 
 1. **Ensure Virtual Environment is Active:** Before running, activate your environment (`source venv/bin/activate` or equivalent).
 2. **Prepare Data:**
