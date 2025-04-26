@@ -86,7 +86,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Handle potential auth setup messages (optional)
+    # Handle potential auth setup messages
     if not os.environ.get('HUGGING_FACE_HUB_TOKEN') and not os.path.exists(os.path.expanduser('~/.cache/huggingface/token')):
         print("Info: Hugging Face token not found in environment variables (HUGGING_FACE_HUB_TOKEN) or cache.")
         print("      Model downloads might fail or be rate-limited if required.")
