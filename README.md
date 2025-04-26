@@ -1,6 +1,6 @@
 # SAM2 Analysis Pipeline
 
-This project provides a framework for evaluating computer vision models, focusing on the **Segment Anything Model 2 (SAM2)**, released by Meta AI (FAIR) as a successor to the original SAM. SAM2 advances the state-of-the-art by unifying promptable segmentation capabilities for both **images and videos** within a single model.
+This project provides a framework for evaluating computer vision models, focusing on the **Segment Anything Model 2 (SAM2)**, released by Meta AI (FAIR). SAM2 enhances the original SAM by unifying promptable segmentation for both **images and videos** within a single model, often using architectures like **Hiera** and a **memory bank** for efficient video context propagation.
 
 Architecturally, SAM2 builds upon its predecessor, employing powerful image encoders (like the **Hiera** architecture used in some variants) and a promptable mask decoder. The key innovation enabling efficient video processing is the introduction of a **memory bank**. This module allows the model to maintain and propagate context (such as object identities and locations) across consecutive video frames, enabling **real-time, consistent segmentation** without recomputing from scratch for every frame. This makes SAM2 significantly more efficient than previous models, particularly for video-based tasks.
 
@@ -21,30 +21,6 @@ The initial evaluation dataset used with this pipeline consists of images random
 This simplification was made to streamline the mask matching and comparison process between the model's generated masks (e.g., from SAM2's `SamAutomaticMaskGenerator`) and the single ground truth object. Future work might involve datasets with multiple objects per image.
 
 The specific images and their corresponding ground truth masks (encoded in COCO RLE format) are referenced within the input JSON file provided to the evaluation pipeline (see `config/sam2_eval_config.json` for an example structure). This file acts as the central map linking image identifiers/paths to the necessary ground truth data for evaluation.
-
-The expected format for this mapping file (typically `data/degradation_map.json`) is:
-
-```json
-{
-  "<image_id>": {
-    "ground_truth_rle": {
-      "size": [H, W],    # Mask dimensions [height, width]
-      "counts": "..."     # COCO Run-Length Encoding string for the mask pixels
-    },
-    "versions": {
-      "original":           {"filepath": "images/<id>.jpg", "level": 0, "degradation_type": "original"},
-      "gaussian_blur": {
-        "5": {"filepath": "pic_degraded/gaussian_blur/<id>_gaussian_blur_5.jpg", "level": 5,  "degradation_type": "gaussian_blur"},
-        ...
-      },
-      "jpeg_compression": {
-        "80": {"filepath": "pic_degraded/jpeg_compression/<id>_jpeg_compression_80.jpg", "level": 80,  "degradation_type": "jpeg_compression"}
-      }
-    }
-  },
-  ...
-}
-```
 
 ## Prerequisites
 
@@ -123,82 +99,254 @@ Before running the pipeline, ensure you have the following prerequisites install
 
 ```text
 SAM2_analysis/
-├── config/                  # Directory for configuration files
-│   └── sam2_eval_config.json # Example config for the SAM2 evaluation
-├── data/                    # Directory for input data (create if needed)
-│   ├── images/              # Directory containing image files
-│   └── degradation_map.json # Example JSON mapping image IDs to GTs and versions
-├── output/                  # Directory for results (created automatically)
-│   └── sam2_evaluation_results.csv # Example output file
-├── sam2/                    # Cloned SAM2 library directory (from prerequisites)
-├── venv/                    # Virtual environment directory (if created)
-├── main.py                  # Main script to run pipelines
+├── config/                  # Pipeline configuration files
+│   └── sam2_eval_config.json # Example config for SAM2 evaluation
+├── data/                    # Input data (images, annotations)
+│   ├── data_scripts/        # Scripts to prepare data (e.g., code_json.py)
+│   ├── images/              # Base image files
+│   ├── pic_degraded/        # Degraded image versions (example)
+│   └── degradation_map.json # Generated JSON mapping image IDs to GTs/versions
+├── output/                  # Results directory (created automatically)
+├── external/                # Directory for external libraries like SAM2
+│   └── sam2/                # Cloned SAM2 library source code
+├── venv/                    # Python virtual environment (if created locally)
+├── sam2_eval_colab.ipynb    # Colab notebook for interactive evaluation
+├── main.py                  # Main script to run pipelines via config
 ├── sam2_eval_pipeline.py    # Implements the SAM2 evaluation logic
 ├── pipeline_utils.py        # Utility functions (model loading, mask decoding)
-├── metrics.py               # Functions for calculating evaluation metrics (IoU, BF1)
+├── metrics.py               # Evaluation metric functions (IoU, BF1)
 ├── requirements.txt         # Python package dependencies
 ├── README.md                # This file
 └── .gitignore               # Git ignore file
 ```
 
-## Configuration
+## Setup and Installation
 
-Experiments are defined using JSON configuration files placed in the `config/` directory.
-The primary script (`main.py`) takes a single argument (`--config`) pointing to the desired configuration file.
+You can run the evaluation pipeline either locally on your machine or using the provided Google Colab notebook.
+
+### Option 1: Local Setup (Recommended for Development)
+
+Follow these steps precisely to set up the project locally.
+
+1. **Prerequisites:**
+   * **Git:** Ensure Git is installed (`git --version`).
+   * **Python:** Python 3.8+ recommended (`python --version` or `python3 --version`).
+   * **PyTorch:** A recent version compatible with your system (CPU/GPU) is needed. A GPU is **highly recommended**. Install it following instructions at [pytorch.org](https://pytorch.org/). *Wait until Step 4 to install it.*
+
+2. **Clone This Repository:**
+
+   ```bash
+   git clone <YOUR_REPO_URL> SAM2_analysis # Replace <YOUR_REPO_URL>
+   cd SAM2_analysis
+   ```
+
+3. **Create and Activate Virtual Environment:** (Crucial for managing dependencies)
+
+   ```bash
+   # Create environment (in the SAM2_analysis directory)
+   python -m venv venv
+
+   # Activate environment
+   # macOS/Linux:
+   source venv/bin/activate
+   # Windows (Git Bash/WSL):
+   # source venv/Scripts/activate
+   # Windows (Command Prompt):
+   # venv\Scripts\activate.bat
+   # Windows (PowerShell):
+   # venv\Scripts\Activate.ps1
+   ```
+
+   *(Your terminal prompt should now show `(venv)`)*. **Keep this environment active for all subsequent steps.**
+
+4. **Install PyTorch:** With the virtual environment active, install PyTorch matching your system (CUDA version, etc.) from [pytorch.org](https://pytorch.org/). For example:
+
+   ```bash
+   # Example (check official site for the command specific to your setup):
+   pip install torch torchvision torchaudio
+   ```
+
+5. **Install SAM2 Library:** SAM2 needs to be installed manually. Create an `external` directory if it doesn't exist.
+
+   ```bash
+   # Make sure you are in the SAM2_analysis directory and venv is active
+   mkdir -p external
+   cd external
+
+   # Clone the official SAM2 repository
+   git clone https://github.com/facebookresearch/sam2.git
+   cd sam2
+
+   # Install SAM2 in editable mode
+   pip install -e .
+
+   # Go back to the project root
+   cd ../..
+   ```
+
+6. **Install Project Dependencies:**
+
+   ```bash
+   # Make sure venv is active and you are in the SAM2_analysis root
+   pip install -r requirements.txt
+   ```
+
+7. **Hugging Face Authentication (Optional):** If using private models or hitting download limits:
+
+   ```bash
+   huggingface-cli login
+   ```
+
+   (Follow prompts to enter your token).
+
+### Option 2: Google Colab Setup
+
+Use the provided `sam2_eval_colab.ipynb` notebook for a cloud-based environment with GPU access.
+
+1. **Open in Colab:** Upload the `sam2_eval_colab.ipynb` notebook to your Google Drive and open it with Google Colaboratory, or open it directly from GitHub if the repository is public.
+
+2. **Select GPU Runtime:** In Colab, go to `Runtime` -> `Change runtime type` and select a `GPU` accelerator (e.g., T4).
+
+3. **Update Repository URL:** In the first code cell ("1. Setup Environment"), **replace** the placeholder `!git clone https://github.com/YOUR_USERNAME/SAM2_analysis.git` with the **correct URL** to *your* repository. If your repository is private, you'll need to include an access token in the URL (e.g., `https://<your_token>@github.com/YOUR_USERNAME/SAM2_analysis.git`). Be careful with exposing tokens.
+
+4. **Prepare Data:**
+   * The notebook assumes your image data and necessary annotation files (like COCO JSON if needed by `code_json.py`) are already present within the cloned repository structure (e.g., in the `data/` directory).
+   * **Before running the notebook**, ensure the required data is committed and pushed to your repository. Alternatively, you can modify the notebook to mount Google Drive and load data from there, but the default setup expects data within the repo.
+
+5. **Run Cells:** Execute the notebook cells sequentially from top to bottom.
+   * **Setup:** Clones the repo (using the URL you provided), installs dependencies (`requirements.txt`), and installs the SAM2 library from the cloned `external/sam2` directory.
+   * **Configuration:** Sets pipeline parameters directly within the notebook code cell. Modify these as needed.
+   * **Data Preparation:** Runs `data/data_scripts/code_json.py` to generate `data/degradation_map.json` **using** `!python data/data_scripts/code_json.py`.
+   * **Visualization (Optional):** Displays a sample image, its versions, and the ground truth mask.
+   * **Run Pipeline:** Executes the main evaluation function (`run_evaluation_pipeline`).
+   * **View Results:** Displays the output results DataFrame.
+
+## Quickstart (Google Colab)
+
+> The easiest way to get up and running—**no local setup required**.
+
+1. Open `sam2_eval_colab.ipynb` directly in Google Colab (either from GitHub or after uploading it to Drive).
+2. Go to **Runtime → Change runtime type** and pick **GPU**.
+3. In **Cell 1 – Setup Environment** replace
+
+   ```bash
+   !git clone https://github.com/YOUR_USERNAME/SAM2_analysis.git
+   ```
+
+   with the HTTPS URL of **your** repo (include a token if it is private).
+4. Verify your data: the notebook expects images/annotations under the cloned repositoryʼs `data/` folder.  
+   • If your data are small, commit them in Git.  
+   • Otherwise upload them via the Colab file-browser or mount Drive and update the `image_base_dir`/`data_path` in the **Configuration** cell.
+5. Run every cell **top-to-bottom**.  
+   The cell that generates the JSON map must use:
+
+   ```bash
+   !python data/data_scripts/code_json.py
+   ```
+
+   (There is **no** `%python` magic.)
+6. When the pipeline finishes a CSV is written to `output/`. Download it from the left-hand file viewer.
+
+## Running the Pipeline (Locally)
+
+1. **Activate Environment:** If not already active, `source venv/bin/activate`.
+
+2. **Prepare Data:**
+   * Place your input images in the location expected by your configuration (e.g., `data/images/`, `data/pic_degraded/`).
+   * If needed, run any data preparation scripts (like `data/data_scripts/code_json.py`) to generate the `degradation_map.json` file required by the pipeline. This script often needs specific annotation files (e.g., COCO format) and the base images to be present in the `data/` directory. Consult the script or `data/README.md` for details.
+
+3. **Configure:** Create or edit a `.json` file in the `config/` directory (e.g., `config/sam2_eval_config.json`). See the "Configuration Details" section below.
+
+4. **Execute:** Run `main.py` from the project root, specifying your config file:
+
+   ```bash
+   python main.py --config config/your_config_file.json
+   ```
+
+## Configuration Details
+
+Pipeline behavior is controlled via JSON files in `config/`.
 
 **Example (`config/sam2_eval_config.json`):**
 
 ```json
 {
-  "pipeline_name": "sam2_eval", 
-  "model_hf_id": "facebook/sam2-hiera-large", 
+  "pipeline_name": "sam2_eval",
+  "description": "Evaluate SAM2 auto-mask generator on data map",
+
   "data_path": "data/degradation_map.json", 
-  "image_base_dir": "data/images/",
-  "output_path": "output/sam2_evaluation_results.csv",
-  "bf1_tolerance": 2,
-  "generator_config": {
+  "image_base_dir": "data", 
+
+  "model_hf_id": "facebook/sam2-hiera-tiny", 
+  "generator_config": { 
     "points_per_side": 32,
     "pred_iou_thresh": 0.88,
     "stability_score_thresh": 0.95,
-    "min_mask_region_area": 100 
+    "crop_n_layers": 0,
+    "min_mask_region_area": 100
+  },
+
+  "iou_threshold": 0.5, 
+  "bf1_tolerance": 2, 
+
+  "output_dir": "output", 
+  "results_filename_prefix": "results_" 
+}
+```
+
+**Key Parameters:**
+
+* `pipeline_name` (Required): Must match a key in `PIPELINE_MAP` in `main.py` (e.g., `"sam2_eval"`).
+* `data_path`: Path to the JSON file mapping image IDs to GT RLE masks and image file versions.
+* `image_base_dir`: The root directory from which file paths inside `data_path` are relative.
+* `model_hf_id`: Hugging Face identifier for the SAM2 model variant.
+* `generator_config`: Dictionary passed to `SamAutomaticMaskGenerator`. See SAM2 docs for options.
+* `iou_threshold`: IoU threshold used internally for matching predicted masks to the single ground truth mask during evaluation.
+* `bf1_tolerance`: Pixel tolerance for the Boundary F1 metric.
+* `output_dir`: Directory where the results CSV will be saved.
+* `results_filename_prefix`: The output CSV will be named `<prefix><timestamp>.csv`.
+
+## Input Data Format (`degradation_map.json`)
+
+The pipeline expects a JSON file (specified by `data_path`) mapping unique image identifiers to their ground truth mask and different image versions.
+
+```json
+{
+  "<image_id_1>": {
+    "ground_truth_rle": { 
+      "size": [H, W],    
+      "counts": "..."     
+    },
+    "versions": { 
+      "original":           {"filepath": "images/<id_1>.jpg", "level": 0, "degradation_type": "original"},
+      "gaussian_blur_5":    {"filepath": "pic_degraded/gaussian_blur/<id_1>_gaussian_blur_5.jpg", "level": 5,  "degradation_type": "gaussian_blur"},
+      "jpeg_compression_80":{"filepath": "pic_degraded/jpeg_compression/<id_1>_jpeg_compression_80.jpg", "level": 80, "degradation_type": "jpeg_compression"}
+    }
+  },
+  "<image_id_2>": {
+    
   }
 }
 ```
 
-**Key Configuration Parameters:**
-
-* `pipeline_name` (Required): Specifies which pipeline function in `main.py`'s `PIPELINE_MAP` to execute (e.g., `"sam2_eval"`).
-* `model_hf_id`: The Hugging Face model identifier for the SAM2 model to load.
-* `data_path`: Path (relative to root) to the JSON file mapping image IDs to ground truth RLE masks and image versions.
-* `image_base_dir`: Path (relative to root) to the directory containing the actual image files referenced in `data_path`.
-* `output_path`: Path (relative to root) where the resulting CSV evaluation metrics will be saved.
-* `bf1_tolerance`: The tolerance in pixels used for the Boundary F1 score calculation.
-* `generator_config`: A dictionary containing parameters to configure the `SamAutomaticMaskGenerator` (see `sam2` library documentation for options like `points_per_side`, `pred_iou_thresh`, etc.).
-
-### Running the Pipeline
-
-1. **Ensure Virtual Environment is Active:** Before running, activate your environment (`source venv/bin/activate` or equivalent).
-2. **Prepare Data:**
-   * Ensure your images are located in the directory specified by `image_base_dir` in your config file.
-   * Ensure your JSON data map (like `data/degradation_map.json`) correctly references your images and contains the ground truth RLE masks. Paths within the JSON map should be relative to `image_base_dir`.
-3. **Configure:** Create or modify a `.json` file in the `config/` directory with your desired settings.
-4. **Execute:** Run the main script from the project root directory **while the environment is active**, providing the path to your configuration file:
-
-   ```bash
-   python main.py --config config/sam2_eval_config.json
-   ```
-
-   (Replace `config/sam2_eval_config.json` with the path to *your* chosen config file).
+* `ground_truth_rle`: Contains the ground truth mask encoded in COCO RLE format. **Crucially, this pipeline currently assumes only a single GT object mask per image.**
+* `versions`: A dictionary where keys are unique identifiers for each version (e.g., "original", "gaussian_blur_5") and values are dictionaries containing:
+  * `filepath`: Path to the image file *relative* to the `image_base_dir` defined in the main config.
+  * `level`: A numerical level associated with the degradation/version (e.g., blur radius, compression quality).
+  * `degradation_type`: A string describing the version type.
 
 ## Output
 
-The script will generate a CSV file at the location specified by `output_path` in your configuration. This file contains detailed results for each image version evaluated, including:
+The pipeline generates a CSV file in the specified `output_dir`. The filename includes the `results_filename_prefix` and a timestamp. It contains evaluation metrics for each image version processed:
 
 * `image_id`: Identifier for the base image.
-* `version_key`: Identifier for the specific image version (e.g., "original", "blur_level_1").
+* `version_key`: Identifier for the specific image version evaluated.
 * `level`: Numerical level associated with the version.
-* `relative_filepath`: Path to the image file used for this version.
-* `iou`: Calculated IoU between the best predicted mask and the ground truth.
+* `relative_filepath`: Path to the image file used.
+* `num_pred_masks`: Number of masks generated by the model for this image.
+* `iou`: Calculated IoU between the best-matching predicted mask and the ground truth.
+* `bf1`: Calculated Boundary F1 score.
+* `error`: Any error message encountered during processing for this specific version.
 * `bf1`: Calculated Boundary F1 score for the best pair.
 * `sam2_score`: The `predicted_iou` score assigned by SAM2 to the chosen best mask.
 * `status`: Indicates the outcome (e.g., "Success", "Image File Not Found", "No Valid Match").
@@ -206,7 +354,7 @@ The script will generate a CSV file at the location specified by `output_path` i
 ## Self-Tests and Unit Tests
 
 This repository ships with **light-weight self-tests** embedded directly in a few
-modules plus a traditional **pytest** suite.  These are meant to give immediate
+modules plus a traditional **pytest** suite. These are meant to give immediate
 feedback that all components are wired correctly after an install or a code
 change.
 
@@ -218,7 +366,7 @@ change.
 | `pytest` (from repo root)                 | Full unit-test suite in `tests/`                 |
 
 The **self-tests** execute in <2 s each and require **no model download**
-(they monkey-patch heavy functions).  Run them whenever you tweak core logic or
+(they monkey-patch heavy functions). Run them whenever you tweak core logic or
 before opening a Pull Request.
 
 Example:
