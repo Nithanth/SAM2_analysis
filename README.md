@@ -307,12 +307,15 @@ This works out of the box if you have internet access. For private models or to 
 If you have downloaded the model checkpoint (`.pt` file) or the entire model directory structure expected by the `sam2` library, you can provide the absolute or relative path to either the directory or the specific `.pt` file.
 
 *Pointing to a directory (if supported by the `sam2` library's loader):*
+
 ```json
 "model_hf_id": "/path/to/local/sam2-hiera-tiny-directory/"
 ```
+
 *(Note: The exact directory structure required depends on the `sam2` library's implementation.)*
 
 *Pointing directly to the checkpoint file:*
+
 ```json
 "model_hf_id": "/path/to/downloaded/sam2_hiera_tiny.pt"
 ```
