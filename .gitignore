@@ -186,3 +186,14 @@ Thumbs.db
 # Testing
 .pytest_cache/
 tests/__pycache__/
+
+# Ignore large data files
+data/images/gt_img/*
+!data/images/gt_img/1.jpg
+!data/images/gt_img/1.png
+!data/images/gt_img/1_annotations.json
+
+data/images/img_degraded/*
+!data/images/img_degraded/*/1_*.*
+
+!data/degradation_map.json
