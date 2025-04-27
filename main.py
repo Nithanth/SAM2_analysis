@@ -8,7 +8,6 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # --- Import Pipeline Functions --- 
-# Import necessary functions AFTER potentially modifying sys.path
 # As more pipelines are added, import their main runner functions here
 try:
     from sam2_eval_pipeline import run_evaluation_pipeline
@@ -34,7 +33,7 @@ def load_config(config_path):
         print(f"An unexpected error occurred while loading config: {e}")
         raise
 
-    # Resolve paths relative to the project root (where main.py is expected to run)
+    # Resolve paths relative to the project root 
     # Important keys needing path resolution:
     path_keys = ['data_path', 'image_base_dir', 'output_path']
     for key in path_keys:
@@ -44,7 +43,7 @@ def load_config(config_path):
         else:
             print(f"Warning: Expected path key '{key}' not found in config file.")
 
-    # Ensure output directory exists
+   
     if 'output_path' in config:
         output_dir = os.path.dirname(config['output_path'])
         try:
@@ -53,8 +52,7 @@ def load_config(config_path):
                 print(f"Created output directory: {output_dir}")
         except OSError as e:
             print(f"Error creating output directory {output_dir}: {e}")
-            # Decide if this is fatal - perhaps it should be?
-            # raise # Uncomment to make this error fatal
+            
     
     # Add check for pipeline_name explicitly
     if 'pipeline_name' not in config:
@@ -68,7 +66,6 @@ def load_config(config_path):
 PIPELINE_MAP = {
     "sam2_eval": run_evaluation_pipeline,
     # Add other pipelines here as they are developed
-    # "future_pipeline_key": run_future_pipeline_function,
 }
 
 # --- Main Execution Logic --- 
@@ -111,10 +108,8 @@ def main():
         except Exception as e:
              print(f"--- Pipeline {pipeline_name} Failed --- ")
              print(f"Error during pipeline execution: {e}")
-             # Optionally add more detailed error logging or re-raise
-             # import traceback
-             # traceback.print_exc()
-             sys.exit(1) # Exit with error status
+             
+             sys.exit(1) 
     else:
         print(f"Error: Unknown pipeline name '{pipeline_name}' specified in config.")
         print(f"Available pipelines: {list(PIPELINE_MAP.keys())}")

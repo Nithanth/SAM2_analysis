@@ -23,7 +23,7 @@ def plot_single_coco_segmentation(image_path: Path, ann_file: Path, category_ids
         if 'annotations' in data:
             anns = data['annotations']
         else:
-            # Assume it's a single annotation dict
+            
             anns = [data]
     elif isinstance(data, list):
         anns = data
@@ -91,14 +91,12 @@ def plot_single_coco_segmentation(image_path: Path, ann_file: Path, category_ids
 
 def main():
     """CLI entry point."""
-    # Setup argument parser
     parser = argparse.ArgumentParser(description="Visualise COCO-style segmentations on an image.")
     parser.add_argument("image", type=Path, help="Path to the image file (e.g. data/images/1.jpg)")
     parser.add_argument("annotation", type=Path, help="Path to the corresponding COCO annotation JSON")
     parser.add_argument("--save", type=Path, default=None, help="Optional output path to save the visualisation instead of showing it")
     parser.add_argument("--categories", type=int, nargs="*", default=None, help="Optional list of category_ids to plot (default: all)")
 
-    # Parse arguments
     args = parser.parse_args()
     
     # Call the plotting function with parsed arguments

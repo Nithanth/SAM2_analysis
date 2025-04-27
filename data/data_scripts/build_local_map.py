@@ -9,9 +9,6 @@ Produces 'data/degradation_map.json' with the structure expected by
 
 Run directly from the project root directory:
     python data/data_scripts/build_local_map.py
-
-Requirements:
-    pip install pycocotools Pillow
 """
 from __future__ import annotations
 
@@ -19,12 +16,13 @@ import json
 import re
 from pathlib import Path
 from typing import Any, Dict, List
+import numpy as np
 
 from PIL import Image
 from pycocotools import mask as mask_utils
 
 # -----------------------------------------------------------------------------
-# Configuration (Adjust if your structure differs)
+# Configuration (Adjust if needed)
 # -----------------------------------------------------------------------------
 ROOT_DIR = Path(__file__).resolve().parents[2]  # Project root
 DATA_DIR = ROOT_DIR / "data"
@@ -43,11 +41,23 @@ FILENAME_PATTERN = re.compile(r"^(\d+)_.*?_(\d+(?:\.\d+)?)\.(?:jpg|png|jpeg)$", 
 # Helper Functions
 # -----------------------------------------------------------------------------
 
-def get_first_polygon(anno_path: Path) -> List[float] | None:
-    """Loads annotation JSON and returns the first polygon segmentation found."""
+def get_mask_from_annotation(anno_path: Path, height: int, width: int) -> Dict | None:
+    """
+    Loads annotation JSON and converts segmentation (polygon or RLE) to a single RLE mask.
+    Handles cases where an object consists of multiple polygon pieces by combining them.
+    
+    Args:
+        anno_path: Path to the annotation JSON file
+        height: Image height
+        width: Image width
+        
+    Returns:
+        RLE encoded mask dictionary with 'size' and 'counts', or None if failed
+    """
     if not anno_path.is_file():
         print(f"Warning: Annotation file not found: {anno_path}")
         return None
+    
     try:
         with open(anno_path, "r") as f:
             data = json.load(f)
@@ -57,52 +67,70 @@ def get_first_polygon(anno_path: Path) -> List[float] | None:
         if isinstance(data, dict) and "annotations" in data:
             anns = data["annotations"]
         if not isinstance(anns, list):
-            anns = [anns] # Handle case where it's a single dict not in a list
+            anns = [anns]  # Handle case where it's a single dict not in a list
 
-        # Find the first annotation with a polygon segmentation
+        
         for ann in anns:
             seg = ann.get("segmentation")
             if not seg:
                 continue
-            if isinstance(seg, dict):  # Skip if it's already RLE
-                print(f"Warning: Annotation {anno_path.name} contains RLE, expected polygon. Skipping polygon search.")
-                return None
+                
+            # If it's already RLE, return it directly (ensuring size is correct)
+            if isinstance(seg, dict) and "counts" in seg and "size" in seg:
+                rle = seg.copy()
+                # Ensure size is [height, width]
+                rle["size"] = [height, width]
+                # Ensure counts is string for JSON serialization
+                if isinstance(rle["counts"], bytes):
+                    rle["counts"] = rle["counts"].decode("utf-8")
+                return rle
+                
+            # Handle polygon segmentation (list of polygons or single polygon)
             if isinstance(seg, list):
-                 # COCO polygon format: list[list[float]] or list[float]
-                 # Take the first polygon list
-                polygon = seg[0] if seg and isinstance(seg[0], list) else seg
-                if polygon and isinstance(polygon[0], (int, float)):
-                     # Basic check for coordinate format
-                    if len(polygon) >= 6 and len(polygon) % 2 == 0:
-                         return polygon
+                # Create a blank binary mask
+                mask = np.zeros((height, width), dtype=np.uint8)
+                
+                # Determine if seg is a list of polygons or a single polygon
+                if seg and isinstance(seg[0], list) and all(isinstance(p, (int, float)) for p in seg[0]):
+                    # seg is a list of polygons
+                    polygons = seg
+                else:
+                    # seg is a single polygon
+                    polygons = [seg]
+                
+                # Convert each polygon to a mask and combine them
+                for polygon in polygons:
+                    if len(polygon) >= 6 and len(polygon) % 2 == 0:  # Valid polygon (at least 3 points)
+                        # Convert polygon to RLE using pycocotools
+                        rle = mask_utils.frPyObjects([polygon], height, width)
+                        # Convert RLE to mask
+                        poly_mask = mask_utils.decode(rle)
+                        # Squeeze the mask to remove the trailing dimension (H, W, 1) -> (H, W)
+                        poly_mask = np.squeeze(poly_mask, axis=-1)
+                        # Combine with existing mask (logical OR)
+                        mask = np.logical_or(mask, poly_mask).astype(np.uint8)
                     else:
                         print(f"Warning: Invalid polygon format in {anno_path.name}: {polygon}")
-                else:
-                    print(f"Warning: Unexpected polygon structure in {anno_path.name}: {seg}")
-
+                
+                # If we have a valid mask (at least one polygon was processed)
+                if np.any(mask):
+                    # Convert the combined mask to RLE
+                    rle = mask_utils.encode(np.asfortranarray(mask))
+                    # Ensure counts is string for JSON serialization
+                    if isinstance(rle["counts"], bytes):
+                        rle["counts"] = rle["counts"].decode("utf-8")
+                    # Ensure size is [height, width]
+                    rle["size"] = [height, width]
+                    return rle
+                
+        print(f"Warning: No valid segmentation found in {anno_path}")
+        return None
+        
     except json.JSONDecodeError:
         print(f"Error: Could not decode JSON from {anno_path}")
     except Exception as e:
         print(f"Error processing annotation {anno_path}: {e}")
     return None
-
-def polygon_to_rle(polygon: List[float], height: int, width: int) -> Dict | None:
-    """Converts a COCO polygon to RLE format."""
-    if not polygon:
-        return None
-    try:
-        rle_list = mask_utils.frPyObjects([polygon], height, width)
-        # Merge RLEs if it returns a list (should be single polygon here)
-        rle = mask_utils.merge(rle_list) if isinstance(rle_list, list) else rle_list
-        # Ensure counts is string for JSON serialisation
-        if isinstance(rle.get("counts"), bytes):
-            rle["counts"] = rle["counts"].decode("utf-8")
-        # Ensure size is [height, width]
-        rle["size"] = [height, width]
-        return rle
-    except Exception as e:
-        print(f"Error converting polygon to RLE: {e}")
-        return None
 
 # -----------------------------------------------------------------------------
 # Main Logic
@@ -151,15 +179,10 @@ def build_degradation_map() -> Dict[str, Dict]:
             print(f"Error opening image {img_file}: {e}. Skipping ID {img_id}.")
             continue
 
-        # --- Get Ground Truth Polygon and Convert to RLE --- 
-        polygon = get_first_polygon(anno_file)
-        if not polygon:
-            print(f"Warning: Could not get valid polygon from {anno_file.name}. Skipping ID {img_id}.")
-            continue
-
-        gt_rle = polygon_to_rle(polygon, height, width) # Note: H, W order for RLE size
+        # --- Get Ground Truth Mask as RLE --- 
+        gt_rle = get_mask_from_annotation(anno_file, height, width)
         if not gt_rle:
-            print(f"Warning: Failed to convert polygon to RLE for ID {img_id}. Skipping.")
+            print(f"Warning: Could not get valid mask from {anno_file.name}. Skipping ID {img_id}.")
             continue
 
         # --- Initialize entry for this image_id --- 
@@ -196,7 +219,6 @@ def build_degradation_map() -> Dict[str, Dict]:
                  if match and match.group(1) == img_id:
                      level_str = match.group(2)
                      try:
-                         # Attempt to convert level to float or int
                          level_val = float(level_str) if '.' in level_str else int(level_str)
                      except ValueError:
                           print(f"Warning: Could not parse level '{level_str}' from filename {deg_file.name}. Skipping this file.")
@@ -209,9 +231,7 @@ def build_degradation_map() -> Dict[str, Dict]:
                          "level": level_val,
                          "degradation_type": deg_type,
                      }
-                 # Add .png or other extensions if needed
-                 # elif deg_file.suffix.lower() == '.png': ...
-
+                 
         processed_ids.add(img_id)
 
     if not degradation_map:
@@ -228,7 +248,6 @@ def main() -> None:
     degradation_map = build_degradation_map()
 
     if degradation_map:
-        # Ensure the output directory exists (it should, it's just DATA_DIR)
         OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
 
         print(f"Saving degradation map to: {OUTPUT_JSON}")
@@ -243,4 +262,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

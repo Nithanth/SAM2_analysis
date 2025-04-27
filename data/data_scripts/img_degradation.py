@@ -14,7 +14,6 @@ Steps performed:
 Run:
     python data/data_scripts/code_degradation.py --coco-annotations path/to/instances_train2017.json --samples 100
 
-A GPU is **NOT** required. The script is deterministic given a --seed.
 """
 from __future__ import annotations
 import argparse

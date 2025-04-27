@@ -75,7 +75,7 @@ def calculate_boundary_f1(pred_mask: np.ndarray, gt_mask: np.ndarray, tolerance_
     if gt_sum == 0 or pred_sum == 0:
         return 0.0  # One empty, the other not, zero score
 
-    # Create distance transforms (distance to the nearest boundary point)
+    # Create distance transforms - distance to the nearest boundary point
     # Invert boundary map so distance is 0 on the boundary
     gt_dist_map = cv2.distanceTransform(cv2.bitwise_not(gt_boundary), cv2.DIST_L2, 3)
     pred_boundary_pixels = pred_boundary > 0

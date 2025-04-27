@@ -3,13 +3,13 @@ import os
 import cv2
 import numpy as np
 import json 
-import torch # Add torch back
-from pycocotools import mask as mask_utils # For RLE encoding/decoding
+import torch 
+from pycocotools import mask as mask_utils 
 
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
-# IMPORTANT: Requires sam2 library installation
+
 try:
     from sam2.sam2_image_predictor import SAM2ImagePredictor
     from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
@@ -20,10 +20,9 @@ except ImportError:
     print("  cd sam2")
     print("  pip install -e .")
     print("  cd ..")
-    # Set to None so checks later will fail gracefully
+    # Set to None so checks later will fail on purposw
     SAM2ImagePredictor = None
     SAM2AutomaticMaskGenerator = None
-    # Optionally raise an error: raise ImportError("SAM2 library not found or could not be imported.")
 
 # --- Globals / Caching --- 
 # Simple cache to avoid reloading the model and generator repeatedly if 
@@ -131,7 +130,6 @@ def decode_coco_rle(rle_obj: dict) -> np.ndarray | None:
         A NumPy array representing the binary mask (0s and 1s), or None if decoding fails.
     """
     try:
-        # Ensure 'counts' is bytes as expected by pycocotools if provided as str
         if isinstance(rle_obj.get("counts"), str):
             rle_obj = {
                 "size": rle_obj["size"],
@@ -216,7 +214,7 @@ def load_sam2_evaluation_data(data_path: str, image_base_dir: str) -> list[dict]
             continue
             
         # Iterate through each version (original or degraded) for the current image.
-        # Handle both leaf dictionaries (original) and nested dictionaries (deg_type -> level -> data)
+        # Handle nested dictionaries (deg_type -> level -> data)
         versions_dict = image_data['versions']
 
         for v_key, v_value in versions_dict.items():
@@ -258,7 +256,7 @@ def load_sam2_evaluation_data(data_path: str, image_base_dir: str) -> list[dict]
                 
     if not processed_items:
         print("Warning: No valid evaluation items were processed from the data map.")
-        return None # Or return empty list? Returning None indicates a potential issue.
+        return None 
         
     print(f"Successfully processed {len(processed_items)} evaluation items.")
     return processed_items
@@ -274,7 +272,7 @@ if __name__ == "__main__":
     # --- 1. decode_coco_rle round-trip ---
     base_mask = np.zeros((4, 4), dtype=np.uint8)
     base_mask[1, 1] = 1  # single pixel
-    # RLE encode needs Fortran-contiguous array
+    # RLE encode needs Fortran-contiguous array (for OpenCV) - idk gemini told me this lol
     rle = mask_util.encode(np.asfortranarray(base_mask.copy()))
     # JSON requires str, not bytes
     rle["counts"] = rle["counts"].decode("ascii") if isinstance(rle["counts"], bytes) else rle["counts"]

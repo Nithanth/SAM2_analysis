@@ -24,7 +24,6 @@ except ImportError:
     maskUtils = None
 
 # --- Define the expected degradation parameters ---
-# (Copied from img_degradation.py - consider a shared config later)
 PARAM_GRID: Dict[str, Dict[str, List[float | int]]] = {
     "gaussian_blur": {"kernel_size": [3, 5, 11, 21, 31]},
     "motion_blur": {"kernel_size": [5, 15, 25, 35, 45]},
@@ -88,7 +87,7 @@ def validate_degradation_map(map_path: Path, base_data_path: Path) -> bool:
     file_not_found_errors = 0
     completeness_errors = 0
     is_structurally_valid = True
-    original_image_dir = None # To store the path like data/images/original
+    original_image_dir = None 
 
     print("\nValidating structure, file paths, and completeness for each map entry...")
     for image_id, entry in data.items():
@@ -136,14 +135,13 @@ def validate_degradation_map(map_path: Path, base_data_path: Path) -> bool:
                 original_filepath_rel = entry["versions"]["original"]["filepath"]
                 original_filepath_abs = base_data_path / "data" / original_filepath_rel 
                 if not original_image_dir:
-                    # Assume all original images are in the same directory
                     original_image_dir = (base_data_path / "data" / Path(original_filepath_rel)).parent
                 if not original_filepath_abs.is_file():
                      print(f"Error [ID: {image_id}]: Original image file not found: {original_filepath_abs}")
                      file_not_found_errors += 1
                      valid_entry = False
                      
-            # Check degraded versions (basic check, more detailed could be added)
+            # Check degraded versions 
             for deg_type, deg_entry in entry["versions"].items():
                 if deg_type == "original": continue # Already checked
                 if not isinstance(deg_entry, dict):
@@ -176,19 +174,18 @@ def validate_degradation_map(map_path: Path, base_data_path: Path) -> bool:
         if missing_types:
             print(f"Warning [ID: {image_id}]: Missing expected degradation types: {sorted(list(missing_types))}")
             completeness_errors += len(missing_types)
-            valid_entry = False # Treat missing types as an error making the entry invalid
+            valid_entry = False 
         if unexpected_types:
-            # Log unexpected types but don't mark as error by default
+            # Log unexpected types 
             print(f"Info [ID: {image_id}]: Found unexpected degradation types (not in PARAM_GRID): {sorted(list(unexpected_types))}")
 
         # Check levels/parameters for each *expected* type found
         for deg_type in EXPECTED_DEGRADATION_TYPES.intersection(actual_degradation_types):
             if not isinstance(entry["versions"].get(deg_type), dict):
-                # Already caught by structural check above, skip level check
                 continue
 
             param_name = list(PARAM_GRID[deg_type].keys())[0] # e.g., 'kernel_size'
-            # Convert expected levels to strings for comparison with JSON keys
+            
             expected_levels = set(map(str, PARAM_GRID[deg_type][param_name]))
             actual_levels = set(entry["versions"][deg_type].keys())
 
@@ -198,7 +195,7 @@ def validate_degradation_map(map_path: Path, base_data_path: Path) -> bool:
             if missing_levels:
                 print(f"Warning [ID: {image_id}, Type: {deg_type}]: Missing expected levels/params ('{param_name}'): {sorted(list(missing_levels))}")
                 completeness_errors += len(missing_levels)
-                valid_entry = False # Treat missing levels as an error
+                valid_entry = False
             if unexpected_levels:
                 print(f"Info [ID: {image_id}, Type: {deg_type}]: Found unexpected levels/params ('{param_name}'): {sorted(list(unexpected_levels))}")
 
@@ -237,7 +234,7 @@ def validate_degradation_map(map_path: Path, base_data_path: Path) -> bool:
                  # Should not happen if sets match, but as a safeguard
                  print("Warning: Set comparison indicates match, but counts differ slightly. Check for duplicate IDs or file naming issues.")
                  print(f"Map IDs: {len(map_image_ids)}, Disk IDs: {len(disk_image_ids)}")
-                 is_structurally_valid = False # Treat as inconsistency
+                 is_structurally_valid = False 
         else:
             is_structurally_valid = False # Mismatch found
             print("Cross-validation FAILED: Discrepancies found between map IDs and disk images.")
@@ -249,14 +246,12 @@ def validate_degradation_map(map_path: Path, base_data_path: Path) -> bool:
     elif original_image_dir:
         print(f"Error: Determined original image directory does not exist: {original_image_dir}")
         print("Skipping disk cross-validation.")
-        is_structurally_valid = False # Cannot validate if dir is missing
+        is_structurally_valid = False 
     else:
         print("Warning: Could not determine original image directory from map entries (map might be empty or missing original versions).")
         print("Skipping disk cross-validation.")
-        # Don't fail validation just because we couldn't determine dir if map was otherwise okay
 
     overall_valid = structural_errors == 0 and file_not_found_errors == 0 and completeness_errors == 0 and is_structurally_valid
-    # Note: is_structurally_valid is updated by completeness checks too
     return overall_valid
 
 
@@ -293,7 +288,6 @@ def visualize_sample(image_id: str, map_path: Path, base_data_path: Path, save_p
     # Get original image path
     try:
         original_filepath_rel = entry["versions"]["original"]["filepath"]
-        # Correct path joining relative to base_data_path/data
         original_filepath_abs = base_data_path / "data" / original_filepath_rel 
     except KeyError:
         print(f"Error: Could not find 'original' version filepath for ID '{image_id}'.")
@@ -327,8 +321,7 @@ def visualize_sample(image_id: str, map_path: Path, base_data_path: Path, save_p
         # Compare mask shape (H, W) tuple with RLE size [H, W] list (converted to tuple)
         if mask.shape[:2] != tuple(rle['size']): 
              print(f"Warning [ID: {image_id}]: Decoded mask shape {mask.shape[:2]} differs from RLE size {rle['size']}. Check RLE encoding.")
-             # Optionally, attempt to resize or handle, but for now just warn
-             # return False # Or decide how to handle mismatch
+             
     except Exception as e:
         print(f"Error decoding RLE mask for ID '{image_id}': {e}")
         return False
@@ -339,12 +332,11 @@ def visualize_sample(image_id: str, map_path: Path, base_data_path: Path, save_p
         ax.imshow(img)
         
         # Create slightly transparent overlay for the mask
-        # Use a color map (e.g., 'autumn', 'viridis') and set alpha
+        
         colored_mask = np.zeros((*mask.shape[:2], 4)) # RGBA, ensure shape matches image dims
-        # Use recommended colormap access
         colormap = plt.colormaps['autumn']
         colored_mask[mask, :3] = colormap(0.5)[:3] # Example: Red color (using index 0.5 from the colormap)
-        colored_mask[mask, 3] = 0.4 # Alpha channel (transparency)
+        colored_mask[mask, 3] = 0.4 
         
         ax.imshow(colored_mask)
         ax.set_title(f"Image ID: {image_id} with Ground Truth Mask")
@@ -352,11 +344,10 @@ def visualize_sample(image_id: str, map_path: Path, base_data_path: Path, save_p
         plt.tight_layout()
 
         if save_path:
-            # Ensure parent directory exists
             save_path.parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(save_path, bbox_inches='tight', pad_inches=0.1)
             print(f"Saved plot to {save_path}")
-            plt.close(fig) # Close the figure after saving
+            plt.close(fig) 
         else:
             plt.show() # Display interactively if not saving
         return True
@@ -364,7 +355,7 @@ def visualize_sample(image_id: str, map_path: Path, base_data_path: Path, save_p
     except Exception as e:
         print(f"Error during plotting/saving for ID '{image_id}': {e}")
         if 'fig' in locals() and plt.fignum_exists(fig.number):
-             plt.close(fig) # Ensure figure is closed on error
+             plt.close(fig) 
         return False
 
 
@@ -382,7 +373,7 @@ def parse_image_ids(id_specs: list[str], all_available_ids: set[str]) -> list[st
         A sorted list of unique, valid image IDs.
     """
     selected_ids = set()
-    if not id_specs: # If None or empty list, use all available
+    if not id_specs: 
         return sorted(list(all_available_ids))
 
     for spec in id_specs:
@@ -405,7 +396,6 @@ def parse_image_ids(id_specs: list[str], all_available_ids: set[str]) -> list[st
                     if id_str in all_available_ids:
                         selected_ids.add(id_str)
                     else:
-                         # Don't warn for every number in a large range not found
                          pass 
             except ValueError:
                 print(f"Warning: Invalid range format '{spec}'. Skipping.")
@@ -465,7 +455,6 @@ def plot_all_gt_masks(map_path: Path, base_data_path: Path, output_dir: Path, id
         else:
             print(f"Output directory {output_dir} does not exist, no cleaning needed.")
             
-    # Ensure output directory exists (create if cleaned or didn't exist)
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
@@ -496,7 +485,7 @@ def plot_all_gt_masks(map_path: Path, base_data_path: Path, output_dir: Path, id
 def main():
     parser = argparse.ArgumentParser(
         description="Data utilities for image dataset and degradation map.",
-        formatter_class=argparse.RawTextHelpFormatter # Preserve newline formatting in help
+        formatter_class=argparse.RawTextHelpFormatter 
     )
     parser.add_argument(
         "--data_dir",
@@ -514,7 +503,7 @@ def main():
         "--action",
         type=str,
         choices=["count", "validate", "visualize", "plot_all", "all"],
-        required=True, # Make action required to avoid ambiguity
+        required=True, 
         help="Action to perform:\n"
              "  count      : Count images referenced in the map.\n"
              "  validate   : Validate map structure and file existence.\n"
@@ -526,7 +515,7 @@ def main():
         "--ids",
         type=str,
         nargs='*',
-        default=[], # Default to empty list
+        default=[], 
         help="Image ID(s) to process for 'visualize' or 'plot_all' actions.\n"
              "Examples:\n"
              "  --ids 55          (single ID)\n"
@@ -539,12 +528,12 @@ def main():
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="output/gt_plots", # Default output dir for plot_all
+        default="output/gt_plots",
         help="Directory to save plots for the 'plot_all' action, relative to data_dir.",
     )
     parser.add_argument(
         "--clean",
-        action='store_true', # Makes it a boolean flag, True if present
+        action='store_true', 
         help="If specified with --action plot_all, cleans (deletes) the output directory before plotting."
     )
 

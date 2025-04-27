@@ -33,7 +33,7 @@ def run_evaluation_pipeline(config: dict):
     print("--- Starting SAM2 Evaluation Pipeline --- ")
 
     # --- 1. Parameter Extraction --- 
-    # Get necessary paths, model ID, and settings from the config dictionary
+    # Get necessary paths, model ID, and settings from the config 
     model_hf_id = config.get('model_hf_id')
     data_path = config.get('data_path')
     image_base_dir = config.get('image_base_dir')
@@ -54,20 +54,19 @@ def run_evaluation_pipeline(config: dict):
              raise ValueError("Model/Generator loading failed.") 
         print("Model loaded successfully.")
         
-        # Load and preprocess the evaluation data map (including decoding GT masks)
+        # Load and preprocess the evaluation data map 
         evaluation_items = load_sam2_evaluation_data(data_path, image_base_dir)
         if evaluation_items is None:
             print("Fatal Error: Failed to load or process evaluation data. Exiting.")
             return
-        print(f"Loaded {len(evaluation_items)} items from {data_path}") # <-- Added logging
+        print(f"Loaded {len(evaluation_items)} items from {data_path}") 
     
     except Exception as e:
         print(f"Error during model or data loading: {e}")
-        # Consider more specific error handling or re-raising
         return # Stop pipeline if essential components fail to load
 
     # --- 3. Main Evaluation Loop --- 
-    results_data = [] # Store results for each processed item
+    results_data = [] 
     print("Processing evaluation items...")
     for item in tqdm(evaluation_items, desc="Evaluating Images"): 
         image_id = item['image_id']
@@ -76,7 +75,7 @@ def run_evaluation_pipeline(config: dict):
         image_path = item['image_filepath'] 
         gt_mask = item['gt_mask'] # Ground truth mask (already decoded numpy array)
         
-        # Store basic info even if processing fails later
+        # Store basic info 
         base_result = {
             'image_id': image_id,
             'version_key': version_key,
@@ -171,16 +170,15 @@ def run_evaluation_pipeline(config: dict):
     output_path = os.path.join(output_dir, timestamped_filename)
 
     try:
-        # Ensure output directory exists
         os.makedirs(output_dir, exist_ok=True)
         print(f"Ensured output directory exists: {output_dir}")
         
         # Save DataFrame to CSV
         results_df.to_csv(output_path, index=False)
-        print(f" Evaluated {len(results_data)} images (saved → {output_path})") # <-- Added logging
+        print(f" Evaluated {len(results_data)} images (saved → {output_path})") 
         
         # --- 5. Cleanup Old Results (Optional) --- 
-        # Keep only the latest N results files to prevent clutter
+        # Keep only the latest N results files as a FIFO cache
         keep_latest_n = 5 
         all_csv_files = sorted(
             glob.glob(os.path.join(output_dir, f"{base_filename}_*{file_extension}")),
