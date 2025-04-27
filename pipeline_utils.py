@@ -3,8 +3,9 @@ import os
 import cv2
 import numpy as np
 import torch
-import pycocotools.mask # For RLE decoding
-import json # Added
+from pycocotools import mask as mask_utils  # For RLE encoding/decoding
+import json 
+
 from transformers import AutoModel
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
@@ -122,8 +123,21 @@ def decode_coco_rle(rle_obj: dict) -> np.ndarray | None:
         A NumPy array representing the binary mask (0s and 1s), or None if decoding fails.
     """
     try:
-        # Use pycocotools to decode the RLE string/bytes into a binary mask
-        mask = pycocotools.mask.decode(rle_obj)
+        # Ensure 'counts' is bytes as expected by pycocotools if provided as str
+        if isinstance(rle_obj.get("counts"), str):
+            rle_obj = {
+                "size": rle_obj["size"],
+                "counts": rle_obj["counts"].encode("utf-8"),
+            }
+
+        mask = mask_utils.decode(rle_obj)
+
+        # pycocotools returns (H, W, 1). squeeze to (H, W) for easier comparison
+        if mask.ndim == 3 and mask.shape[2] == 1:
+            mask = np.squeeze(mask, axis=2)
+
+        # Ensure binary (0/1 uint8)
+        mask = (mask > 0).astype(np.uint8)
         return mask
     except Exception as e:
         print(f"Error decoding RLE object: {e}. RLE: {rle_obj}")
