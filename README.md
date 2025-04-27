@@ -213,10 +213,11 @@ There are two main ways to run the SAM2 evaluation:
 
 The evaluation pipeline relies on specific data formats prepared by scripts in the `data/data_scripts/` directory:
 
-* `code_degradation.py`: Samples images from a COCO dataset, downloads them and their annotations, renames them sequentially, and applies various image degradations.
-* `code_json.py`: Scans the prepared image/degradation folders and annotation files to generate the `degradation_map.json` file, which maps image IDs to their versions and ground truth masks (in RLE format).
+* `code_degradation.py`: (Optional first step) Samples images/annotations from a source dataset (e.g., COCO), downloads them, applies specified degradations, and organizes them into the `data/images/gt_img/` and `data/images/img_degraded/` structure.
+* `build_local_map.py`: Scans the `data/images/gt_img/` and `data/images/img_degraded/` directories to generate the crucial `data/degradation_map.json` file. It extracts image IDs, finds corresponding annotations, converts ground truth masks to RLE format, locates all degraded versions, and compiles the map. **This must be run after `code_degradation.py` or after manually placing the image/annotation files.**
+* `data_utils.py`: Provides utilities for validating the `degradation_map.json` and visualizing the data samples (original images, degraded versions, and ground truth masks). Useful for verifying the data preparation steps.
 
-See the `data/README.md` file for detailed instructions on how to prepare your own dataset using these scripts.
+Refer to the `data/README.md` file for detailed instructions on how to prepare your own dataset using these scripts.
 
 ## Project Structure
 
@@ -225,22 +226,23 @@ SAM2_analysis/
 ├── config/                  # Pipeline configuration files
 │   └── sam2_eval_config.json # Example config for SAM2 evaluation
 ├── data/                    # Input data (images, annotations)
-│   ├── data_scripts/        # Scripts to prepare data (e.g., code_json.py)
+│   ├── data_scripts/        # Scripts to prepare data (e.g., build_local_map.py)
 │   ├── images/              # Base image files
-│   ├── pic_degraded/        # Degraded image versions (example)
-│   └── degradation_map.json # Generated JSON mapping image IDs to GTs/versions
-├── output/                  # Results directory (created automatically)
-├── external/                # Directory for external libraries like SAM2
-│   └── sam2/                # Cloned SAM2 library source code
-├── venv/                    # Python virtual environment (if created locally)
-├── sam2_eval_colab.ipynb    # Colab notebook for interactive evaluation
-├── main.py                  # Main script to run pipelines via config
-├── sam2_eval_pipeline.py    # Implements the SAM2 evaluation logic
-├── pipeline_utils.py        # Utility functions (model loading, mask decoding)
-├── metrics.py               # Evaluation metric functions (IoU, BF1)
-├── requirements.txt         # Python package dependencies
+│   │   ├── gt_img/          # Original images and annotations
+│   │   └── img_degraded/    # Degraded image versions (subdirs per type)
+│   └── degradation_map.json # Generated JSON map for pipeline input
+├── external/                # Manually installed external libraries (e.g., sam2)
+│   └── sam2/                # Cloned sam2 repository
+├── output/                  # Pipeline results (CSV files)
+│   └── README.md            # Explanation of output files
+├── .gitignore               # Specifies intentionally untracked files
+├── main.py                  # Main script to run pipelines
+├── metrics.py               # Evaluation metric calculations (mIoU, BF1)
+├── pipeline_utils.py        # Utility functions for pipelines (loading, prediction)
 ├── README.md                # This file
-└── .gitignore               # Git ignore file
+├── requirements.txt         # Python package dependencies
+├── sam2_eval_pipeline.py    # Core SAM2 evaluation pipeline logic
+└── venv/                    # Python virtual environment (if created)
 ```
 
 ## Configuration Details
