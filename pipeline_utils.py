@@ -2,11 +2,10 @@
 import os
 import cv2
 import numpy as np
-import torch
-from pycocotools import mask as mask_utils  # For RLE encoding/decoding
 import json 
+import torch # Add torch back
+from pycocotools import mask as mask_utils # For RLE encoding/decoding
 
-from transformers import AutoModel
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
@@ -37,14 +36,19 @@ _cached_generator = None
 
 # --- Model Loading --- 
 def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict) -> tuple[SAM2ImagePredictor | None, SAM2AutomaticMaskGenerator | None]:
-    """Loads the SAM2 model predictor and mask generator from Hugging Face.
+    """Loads the SAM2 model predictor and mask generator.
+
+    Uses the SAM2 library's from_pretrained method, which handles downloading 
+    from Hugging Face Hub (if model_hf_id is an ID) or loading from a local 
+    checkpoint (.pt) specified by the ID.
 
     Uses a simple global cache to avoid reloading if called again with the 
     same model_hf_id and generator_config.
 
     Args:
-        model_hf_id: The Hugging Face identifier for the SAM2 model 
-                     (e.g., 'facebook/sam2-hiera-large').
+        model_hf_id: The identifier for the SAM2 model. Can be a Hugging Face 
+                     model ID (e.g., 'facebook/sam2-hiera-large') or potentially
+                     a path to a local checkpoint recognized by the library.
         generator_config: A dictionary containing parameters for the 
                           SAM2AutomaticMaskGenerator (points_per_side, etc.).
 
@@ -61,11 +65,15 @@ def load_sam2_predictor_and_generator(model_hf_id: str, generator_config: dict) 
 
     print(f"Loading SAM2 model and generator for {model_hf_id}...")
     try:
-        # Load the model from Hugging Face Hub
-        model = AutoModel.from_pretrained(model_hf_id)
-        # Create the predictor
-        predictor = SAM2ImagePredictor(model)
-        # Create the mask generator with specified configuration
+        # Load the predictor using the sam2 library's method
+        # This handles loading from HF Hub or local checkpoints internally
+        predictor = SAM2ImagePredictor.from_pretrained(model_hf_id)
+        
+        # Create the mask generator using the model from the loaded predictor
+        # Ensure the predictor and its model loaded successfully
+        if predictor is None or predictor.model is None:
+             raise ValueError("Predictor or predictor.model is None after loading.")
+             
         generator = SAM2AutomaticMaskGenerator(predictor.model, **generator_config)
         
         # Update cache

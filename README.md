@@ -288,6 +288,37 @@ Pipeline behavior is controlled via JSON files in `config/`.
 * `output_dir`: Directory where the results CSV will be saved.
 * `results_filename_prefix`: The output CSV will be named `<prefix><timestamp>.csv`.
 
+## SAM2 Model Loading Options
+
+The pipeline utilizes the `sam2` library's built-in loading mechanisms (`SAM2ImagePredictor.from_pretrained`). You configure the model source using the `model_hf_id` parameter in your configuration file. Two primary methods are supported:
+
+### Option 1: Hugging Face Model ID (Recommended)
+
+Specify the Hugging Face Hub identifier for the desired SAM2 model. The `sam2` library will handle downloading the necessary files (including `.pt` checkpoints) and loading the model. This is the recommended approach for models hosted on the Hub, like the default.
+
+```json
+"model_hf_id": "facebook/sam2-hiera-tiny"
+```
+
+This works out of the box if you have internet access. For private models or to potentially avoid rate limiting, ensure you are authenticated with Hugging Face (refer to Prerequisites).
+
+### Option 2: Local Model Directory or Checkpoint Path
+
+If you have downloaded the model checkpoint (`.pt` file) or the entire model directory structure expected by the `sam2` library, you can provide the absolute or relative path to either the directory or the specific `.pt` file.
+
+*Pointing to a directory (if supported by the `sam2` library's loader):*
+```json
+"model_hf_id": "/path/to/local/sam2-hiera-tiny-directory/"
+```
+*(Note: The exact directory structure required depends on the `sam2` library's implementation.)*
+
+*Pointing directly to the checkpoint file:*
+```json
+"model_hf_id": "/path/to/downloaded/sam2_hiera_tiny.pt"
+```
+
+This option is useful for offline use or when using custom-trained checkpoints. Ensure the path is correct and accessible from where you run the script.
+
 ## Input Data Format (`degradation_map.json`)
 
 The pipeline expects a JSON file (specified by `data_path`) mapping unique image identifiers to their ground truth mask and different image versions.
@@ -372,3 +403,9 @@ To add a new evaluation pipeline:
 3. Add an entry to the `PIPELINE_MAP` dictionary in `main.py`, mapping a unique string key (e.g., `"my_new_eval"`) to your function (`run_my_pipeline`).
 4. Create a new configuration file in `config/` specifying `"pipeline_name": "my_new_eval"` and any parameters your new pipeline requires.
 5. Run using `python main.py --config config/my_new_config.json`.
+
+When the path is prefixed with "pytorch:", the pipeline will:
+
+1. Instantiate the SAM2 model architecture from the library code
+2. Load weights directly from the specified .pt file using PyTorch's loading mechanisms
+3. Configure any necessary processor components for image preprocessing

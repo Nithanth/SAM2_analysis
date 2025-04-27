@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse
 import numpy as np
 import shutil
+from typing import List, Dict
 
 try:
     from PIL import Image
@@ -21,6 +22,16 @@ try:
 except ImportError:
     print("Error: pycocotools is required for RLE decoding. Run 'pip install pycocotools'")
     maskUtils = None
+
+# --- Define the expected degradation parameters ---
+# (Copied from img_degradation.py - consider a shared config later)
+PARAM_GRID: Dict[str, Dict[str, List[float | int]]] = {
+    "gaussian_blur": {"kernel_size": [3, 5, 11, 21, 31]},
+    "motion_blur": {"kernel_size": [5, 15, 25, 35, 45]},
+    "jpeg_compression": {"quality": [100, 80, 60, 40, 20]},
+    "low_contrast": {"factor": [1.0, 0.8, 0.6, 0.4, 0.2]},
+}
+EXPECTED_DEGRADATION_TYPES = set(PARAM_GRID.keys())
 
 def count_images(base_data_path: Path):
     """Counts images in gt_img and img_degraded directories."""
@@ -75,10 +86,11 @@ def validate_degradation_map(map_path: Path, base_data_path: Path) -> bool:
 
     structural_errors = 0
     file_not_found_errors = 0
+    completeness_errors = 0
     is_structurally_valid = True
     original_image_dir = None # To store the path like data/images/original
 
-    print("\nValidating structure and file paths for each map entry...")
+    print("\nValidating structure, file paths, and completeness for each map entry...")
     for image_id, entry in data.items():
         valid_entry = True
         if not isinstance(entry, dict):
@@ -122,7 +134,7 @@ def validate_degradation_map(map_path: Path, base_data_path: Path) -> bool:
             else:
                 # Check original file path
                 original_filepath_rel = entry["versions"]["original"]["filepath"]
-                original_filepath_abs = base_data_path / "data" / original_filepath_rel
+                original_filepath_abs = base_data_path / "data" / original_filepath_rel 
                 if not original_image_dir:
                     # Assume all original images are in the same directory
                     original_image_dir = (base_data_path / "data" / Path(original_filepath_rel)).parent
@@ -154,13 +166,51 @@ def validate_degradation_map(map_path: Path, base_data_path: Path) -> bool:
                              file_not_found_errors += 1
                              valid_entry = False
                              
+        # --- Start: New Completeness Check ---
+        actual_degradation_types = set(entry["versions"].keys()) - {"original"}
+
+        # Check degradation types
+        missing_types = EXPECTED_DEGRADATION_TYPES - actual_degradation_types
+        unexpected_types = actual_degradation_types - EXPECTED_DEGRADATION_TYPES
+
+        if missing_types:
+            print(f"Warning [ID: {image_id}]: Missing expected degradation types: {sorted(list(missing_types))}")
+            completeness_errors += len(missing_types)
+            valid_entry = False # Treat missing types as an error making the entry invalid
+        if unexpected_types:
+            # Log unexpected types but don't mark as error by default
+            print(f"Info [ID: {image_id}]: Found unexpected degradation types (not in PARAM_GRID): {sorted(list(unexpected_types))}")
+
+        # Check levels/parameters for each *expected* type found
+        for deg_type in EXPECTED_DEGRADATION_TYPES.intersection(actual_degradation_types):
+            if not isinstance(entry["versions"].get(deg_type), dict):
+                # Already caught by structural check above, skip level check
+                continue
+
+            param_name = list(PARAM_GRID[deg_type].keys())[0] # e.g., 'kernel_size'
+            # Convert expected levels to strings for comparison with JSON keys
+            expected_levels = set(map(str, PARAM_GRID[deg_type][param_name]))
+            actual_levels = set(entry["versions"][deg_type].keys())
+
+            missing_levels = expected_levels - actual_levels
+            unexpected_levels = actual_levels - expected_levels
+
+            if missing_levels:
+                print(f"Warning [ID: {image_id}, Type: {deg_type}]: Missing expected levels/params ('{param_name}'): {sorted(list(missing_levels))}")
+                completeness_errors += len(missing_levels)
+                valid_entry = False # Treat missing levels as an error
+            if unexpected_levels:
+                print(f"Info [ID: {image_id}, Type: {deg_type}]: Found unexpected levels/params ('{param_name}'): {sorted(list(unexpected_levels))}")
+
+        # --- End: New Completeness Check ---
+        
         if not valid_entry:
             is_structurally_valid = False
             
-    if structural_errors == 0 and file_not_found_errors == 0:
-        print("\nAll map entries are structurally valid and all referenced files exist.")
+    if structural_errors == 0 and file_not_found_errors == 0 and completeness_errors == 0:
+        print("\nAll map entries are structurally valid, complete according to PARAM_GRID, and all referenced files exist.")
     else:
-        print(f"\nValidation Summary: Structural Errors = {structural_errors}, Files Not Found = {file_not_found_errors}")
+        print(f"\nValidation Summary: Structural Errors = {structural_errors}, Files Not Found = {file_not_found_errors}, Completeness Errors = {completeness_errors}")
         
     # --- Cross-validation with Original Images Directory --- 
     print("\nPerforming cross-validation with original images directory...")
@@ -205,12 +255,9 @@ def validate_degradation_map(map_path: Path, base_data_path: Path) -> bool:
         print("Skipping disk cross-validation.")
         # Don't fail validation just because we couldn't determine dir if map was otherwise okay
 
-    final_verdict = is_structurally_valid and structural_errors == 0 and file_not_found_errors == 0
-    print("-" * 30)
-    print(f"Overall Map Validation Status: {'PASSED' if final_verdict else 'FAILED'}")
-    print("-" * 30)
-             
-    return final_verdict
+    overall_valid = structural_errors == 0 and file_not_found_errors == 0 and completeness_errors == 0 and is_structurally_valid
+    # Note: is_structurally_valid is updated by completeness checks too
+    return overall_valid
 
 
 def visualize_sample(image_id: str, map_path: Path, base_data_path: Path, save_path: Path = None):
