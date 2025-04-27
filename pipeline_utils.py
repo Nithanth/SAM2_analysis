@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import pycocotools.mask # For RLE decoding
 import json # Added
+from transformers import AutoModel
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 

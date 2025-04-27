@@ -20,6 +20,7 @@ torchvision>=0.20.1
 
 # 3. Hugging Face Hub (Used by sam2 library for model download)
 huggingface_hub
+transformers
 
 # 4. Optional but recommended by sam2 for some features/performance
 accelerate 

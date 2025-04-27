@@ -53,44 +53,42 @@ print("Detected degradation types:", DEGRADATIONS)
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
-_POLY_RE = re.compile(r"^([0-9]+(?:\.[0-9]+)?)(?:,?\s*)$")
-
-def load_first_polygon(anno_path: Path) -> List[float]:
+def load_first_annotation_rle(anno_path: Path) -> Dict[str, Any]:
     """Return first polygon list `[x1,y1,x2,y2,...]` from annotation JSON."""
     with open(anno_path, "r") as f:
         data = json.load(f)
 
-    # COCO files sometimes a dict or list
+    # Normalise to list[annotation]
     anns = (
-        data["annotations"]
-        if isinstance(data, dict) and "annotations" in data
-        else data if isinstance(data, list) else [data]
+        data["annotations"] if isinstance(data, dict) and "annotations" in data else data
     )
+    if not isinstance(anns, list):
+        anns = [anns]
 
-    # Extract segmentation data (supports polygon or pre-encoded RLE)
-    polygon: List[float] = []
-    rle_obj: Dict[str, Any] = {}
+    polygon: List[float] | None = None
+    rle_obj: Dict[str, Any] | None = None
+
+    # Take first annotation with segmentation
     for ann in anns:
         seg = ann.get("segmentation")
         if not seg:
             continue
-        # COCO segmentation can be
-        #   1) list[list[float]] or list[float]  → polygon coordinates
-        #   2) dict                          → already-compressed RLE
-        if isinstance(seg, list):
-            polygon = seg[0] if isinstance(seg[0], list) else seg
-        elif isinstance(seg, dict):
+        if isinstance(seg, dict):  # Already RLE
             rle_obj = seg
-        break  # use first valid annotation only
+        else:
+            # COCO polygon: list[list[float]] or list[float]
+            polygon = seg[0] if isinstance(seg[0], list) else seg
+        break
 
-    # --- Ground-Truth RLE (lossless) ---
     if rle_obj:
-        # Ensure counts stored as str for JSON
         if isinstance(rle_obj.get("counts"), bytes):
             rle_obj["counts"] = rle_obj["counts"].decode("ascii")
         return rle_obj
-    else:
-        return coco_poly_to_rle(polygon, anno_path) if polygon else {}
+
+    if polygon:
+        return coco_poly_to_rle(polygon, anno_path)
+
+    return {}
 
 
 def coco_poly_to_rle(segmentation: List, anno_path: Path) -> Dict:
@@ -145,41 +143,12 @@ def build_degradation_map() -> Dict[str, Dict]:
             print(f"[Warning] Annotation missing for {img_id}, skipping.")
             continue
 
-        # Load annotation JSON
-        with open(anno_path, "r") as f:
-            data = json.load(f)
+        # ---- Ground Truth RLE ----
+        gt_rle = load_first_annotation_rle(anno_path)
 
-        # COCO files sometimes a dict or list
-        anns = (
-            data["annotations"]
-            if isinstance(data, dict) and "annotations" in data
-            else data if isinstance(data, list) else [data]
-        )
-
-        # Extract segmentation data (supports polygon or pre-encoded RLE)
-        polygon: List[float] = []
-        rle_obj: Dict[str, Any] = {}
-        for ann in anns:
-            seg = ann.get("segmentation")
-            if not seg:
-                continue
-            # COCO segmentation can be
-            #   1) list[list[float]] or list[float]  → polygon coordinates
-            #   2) dict                          → already-compressed RLE
-            if isinstance(seg, list):
-                polygon = seg[0] if isinstance(seg[0], list) else seg
-            elif isinstance(seg, dict):
-                rle_obj = seg
-            break  # use first valid annotation only
-
-        # --- Ground-Truth RLE (lossless) ---
-        if rle_obj:
-            # Ensure counts stored as str for JSON
-            if isinstance(rle_obj.get("counts"), bytes):
-                rle_obj["counts"] = rle_obj["counts"].decode("ascii")
-            gt_rle = rle_obj
-        else:
-            gt_rle = coco_poly_to_rle(polygon, anno_path) if polygon else {}
+        if not gt_rle:
+            print(f"[Warning] Could not derive GT mask for {img_id}, skipping.")
+            continue
 
         # --- Degraded Versions --- Build nested structure
         versions: Dict[str, Any] = {

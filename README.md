@@ -72,17 +72,22 @@ Before running the pipeline, ensure you have the following prerequisites install
 5. **SAM2 Library (Manual Installation Required):** With your virtual environment **active**, install the official `sam2` library manually from its repository:
 
    ```bash
-   # 1. Clone the repository
+   # Ensure you are in the SAM2_analysis project root and venv is active
+   mkdir -p external
+   cd external
+   # Now in the external directory within the project
+   # Clone the repository
    git clone https://github.com/facebookresearch/sam2.git
    
-   # 2. Navigate into the directory
+   # Navigate into the directory
    cd sam2
    
-   # 3. Install in editable mode
+   # Install in editable mode
    pip install -e .
    
-   # 4. Go back to your project directory
-   cd ..
+   # Go back to the project root
+   cd ../..
+   # Now back in the SAM2_analysis project root
    ```
 
 6. **Other Python Dependencies:** With your virtual environment **active**, install the remaining required packages using the `requirements.txt` file:
@@ -94,31 +99,6 @@ Before running the pipeline, ensure you have the following prerequisites install
 7. **Hugging Face Authentication (Optional but Recommended):** If you use private models or encounter download rate limits, you may need to authenticate with Hugging Face Hub **within your activated environment**:
    * **Option 1 (CLI Login):** Run `huggingface-cli login` and follow the prompts.
    * **Option 2 (Environment Variable):** Set the `HUGGING_FACE_HUB_TOKEN` environment variable with your token.
-
-## Project Structure
-
-```text
-SAM2_analysis/
-├── config/                  # Pipeline configuration files
-│   └── sam2_eval_config.json # Example config for SAM2 evaluation
-├── data/                    # Input data (images, annotations)
-│   ├── data_scripts/        # Scripts to prepare data (e.g., code_json.py)
-│   ├── images/              # Base image files
-│   ├── pic_degraded/        # Degraded image versions (example)
-│   └── degradation_map.json # Generated JSON mapping image IDs to GTs/versions
-├── output/                  # Results directory (created automatically)
-├── external/                # Directory for external libraries like SAM2
-│   └── sam2/                # Cloned SAM2 library source code
-├── venv/                    # Python virtual environment (if created locally)
-├── sam2_eval_colab.ipynb    # Colab notebook for interactive evaluation
-├── main.py                  # Main script to run pipelines via config
-├── sam2_eval_pipeline.py    # Implements the SAM2 evaluation logic
-├── pipeline_utils.py        # Utility functions (model loading, mask decoding)
-├── metrics.py               # Evaluation metric functions (IoU, BF1)
-├── requirements.txt         # Python package dependencies
-├── README.md                # This file
-└── .gitignore               # Git ignore file
-```
 
 ## Setup and Installation
 
@@ -172,16 +152,19 @@ Follow these steps precisely to set up the project locally.
    # Make sure you are in the SAM2_analysis directory and venv is active
    mkdir -p external
    cd external
-
-   # Clone the official SAM2 repository
+   # Now in the external directory within the project
+   # Clone the repository
    git clone https://github.com/facebookresearch/sam2.git
+   
+   # Navigate into the directory
    cd sam2
-
-   # Install SAM2 in editable mode
+   
+   # Install in editable mode
    pip install -e .
-
+   
    # Go back to the project root
    cd ../..
+   # Now back in the SAM2_analysis project root
    ```
 
 6. **Install Project Dependencies:**
@@ -201,67 +184,64 @@ Follow these steps precisely to set up the project locally.
 
 ### Option 2: Google Colab Setup
 
-Use the provided `sam2_eval_colab.ipynb` notebook for a cloud-based environment with GPU access.
+Alternatively, you can run the evaluation directly in Google Colab using the provided notebook:
 
-1. **Open in Colab:** Upload the `sam2_eval_colab.ipynb` notebook to your Google Drive and open it with Google Colaboratory, or open it directly from GitHub if the repository is public.
+* [`sam2_eval_colab.ipynb`](sam2_eval_colab.ipynb)
 
-2. **Select GPU Runtime:** In Colab, go to `Runtime` -> `Change runtime type` and select a `GPU` accelerator (e.g., T4).
+This notebook handles cloning the repository, installing dependencies (including SAM2), and running the evaluation pipeline within the Colab environment. Follow the instructions within the notebook cells.
 
-3. **Update Repository URL:** In the first code cell ("1. Setup Environment"), **replace** the placeholder `!git clone https://github.com/YOUR_USERNAME/SAM2_analysis.git` with the **correct URL** to *your* repository. If your repository is private, you'll need to include an access token in the URL (e.g., `https://<your_token>@github.com/YOUR_USERNAME/SAM2_analysis.git`). Be careful with exposing tokens.
+## Usage
 
-4. **Prepare Data:**
-   * The notebook assumes your image data and necessary annotation files (like COCO JSON if needed by `code_json.py`) are already present within the cloned repository structure (e.g., in the `data/` directory).
-   * **Before running the notebook**, ensure the required data is committed and pushed to your repository. Alternatively, you can modify the notebook to mount Google Drive and load data from there, but the default setup expects data within the repo.
+There are two main ways to run the SAM2 evaluation:
 
-5. **Run Cells:** Execute the notebook cells sequentially from top to bottom.
-   * **Setup:** Clones the repo (using the URL you provided), installs dependencies (`requirements.txt`), and installs the SAM2 library from the cloned `external/sam2` directory.
-   * **Configuration:** Sets pipeline parameters directly within the notebook code cell. Modify these as needed.
-   * **Data Preparation:** Runs `data/data_scripts/code_json.py` to generate `data/degradation_map.json` **using** `!python data/data_scripts/code_json.py`.
-   * **Visualization (Optional):** Displays a sample image, its versions, and the ground truth mask.
-   * **Run Pipeline:** Executes the main evaluation function (`run_evaluation_pipeline`).
-   * **View Results:** Displays the output results DataFrame.
+1. **Locally (using `main.py`):**
 
-## Quickstart (Google Colab)
+    Ensure your virtual environment is active and all prerequisites (including the manual SAM2 installation) are met. Then, run the main script, pointing it to a configuration file:
 
-> The easiest way to get up and running—**no local setup required**.
+    ```bash
+    # Make sure (venv) is active
+    python main.py --config config/sam2_eval_config.json
+    ```
 
-1. Open `sam2_eval_colab.ipynb` directly in Google Colab (either from GitHub or after uploading it to Drive).
-2. Go to **Runtime → Change runtime type** and pick **GPU**.
-3. In **Cell 1 – Setup Environment** replace
+    Results will be saved as timestamped CSV files in the `output/` directory as specified in the config.
 
-   ```bash
-   !git clone https://github.com/YOUR_USERNAME/SAM2_analysis.git
-   ```
+2. **Google Colab (using the notebook):**
 
-   with the HTTPS URL of **your** repo (include a token if it is private).
-4. Verify your data: the notebook expects images/annotations under the cloned repositoryʼs `data/` folder.  
-   • If your data are small, commit them in Git.  
-   • Otherwise upload them via the Colab file-browser or mount Drive and update the `image_base_dir`/`data_path` in the **Configuration** cell.
-5. Run every cell **top-to-bottom**.  
-   The cell that generates the JSON map must use:
+    Open [`sam2_eval_colab.ipynb`](sam2_eval_colab.ipynb) in Google Colab and execute the cells sequentially. The notebook guides you through setup and execution.
 
-   ```bash
-   !python data/data_scripts/code_json.py
-   ```
+### Data Preparation
 
-   (There is **no** `%python` magic.)
-6. When the pipeline finishes a CSV is written to `output/`. Download it from the left-hand file viewer.
+The evaluation pipeline relies on specific data formats prepared by scripts in the `data/data_scripts/` directory:
 
-## Running the Pipeline (Locally)
+* `code_degradation.py`: Samples images from a COCO dataset, downloads them and their annotations, renames them sequentially, and applies various image degradations.
+* `code_json.py`: Scans the prepared image/degradation folders and annotation files to generate the `degradation_map.json` file, which maps image IDs to their versions and ground truth masks (in RLE format).
 
-1. **Activate Environment:** If not already active, `source venv/bin/activate`.
+See the `data/README.md` file for detailed instructions on how to prepare your own dataset using these scripts.
 
-2. **Prepare Data:**
-   * Place your input images in the location expected by your configuration (e.g., `data/images/`, `data/pic_degraded/`).
-   * If needed, run any data preparation scripts (like `data/data_scripts/code_json.py`) to generate the `degradation_map.json` file required by the pipeline. This script often needs specific annotation files (e.g., COCO format) and the base images to be present in the `data/` directory. Consult the script or `data/README.md` for details.
+## Project Structure
 
-3. **Configure:** Create or edit a `.json` file in the `config/` directory (e.g., `config/sam2_eval_config.json`). See the "Configuration Details" section below.
-
-4. **Execute:** Run `main.py` from the project root, specifying your config file:
-
-   ```bash
-   python main.py --config config/your_config_file.json
-   ```
+```text
+SAM2_analysis/
+├── config/                  # Pipeline configuration files
+│   └── sam2_eval_config.json # Example config for SAM2 evaluation
+├── data/                    # Input data (images, annotations)
+│   ├── data_scripts/        # Scripts to prepare data (e.g., code_json.py)
+│   ├── images/              # Base image files
+│   ├── pic_degraded/        # Degraded image versions (example)
+│   └── degradation_map.json # Generated JSON mapping image IDs to GTs/versions
+├── output/                  # Results directory (created automatically)
+├── external/                # Directory for external libraries like SAM2
+│   └── sam2/                # Cloned SAM2 library source code
+├── venv/                    # Python virtual environment (if created locally)
+├── sam2_eval_colab.ipynb    # Colab notebook for interactive evaluation
+├── main.py                  # Main script to run pipelines via config
+├── sam2_eval_pipeline.py    # Implements the SAM2 evaluation logic
+├── pipeline_utils.py        # Utility functions (model loading, mask decoding)
+├── metrics.py               # Evaluation metric functions (IoU, BF1)
+├── requirements.txt         # Python package dependencies
+├── README.md                # This file
+└── .gitignore               # Git ignore file
+```
 
 ## Configuration Details
 
