@@ -24,11 +24,11 @@ except ImportError as e:
 
 from peft import LoraConfig, get_peft_model
 
-# --- Configuration ---
+
 MODEL_ID = "facebook/sam2-hiera-tiny" # Or other SAM2 variant
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# --- 1. Load the Base SAM2 Model ---
+# Load the Base SAM2 Model 
 def load_base_model(model_id: str = MODEL_ID, device: str = DEVICE):
     """Returns (image_encoder_module, original_predictor)."""
     print(f"Loading SAM2 model {model_id} …")
@@ -44,7 +44,7 @@ def load_base_model(model_id: str = MODEL_ID, device: str = DEVICE):
     print("Image encoder ready for LoRA.")
     return model, predictor
 
-# --- 2. Define LoRA Configuration ---
+# Define LoRA Configuration 
 def create_lora_config(model: torch.nn.Module) -> LoraConfig:
     """Selects attention projection layers inside *model* as LoRA targets."""
     candidate_suffixes = ("q_proj", "k_proj", "v_proj", "qkv")
@@ -61,7 +61,7 @@ def create_lora_config(model: torch.nn.Module) -> LoraConfig:
         bias="none",
     )
 
-# --- 3. Apply LoRA to the Model ---
+# Apply LoRA to the Model 
 def apply_lora(model, lora_config):
     print("Applying LoRA adapters to the model...")
     try:
@@ -74,7 +74,7 @@ def apply_lora(model, lora_config):
         print("This might be due to incorrect target_modules or incompatibilities.")
         return None
 
-# --- Helper: Placeholder Dataset ( ---
+# Helper: Placeholder Dataset 
 class FineTuneDataset(Dataset):
     def __init__(self, data_path, transform=None):
         # todo: Load image paths and GT mask info from data_path
@@ -121,10 +121,9 @@ class FineTuneDataset(Dataset):
         # Return image (as tensor) and mask (as tensor)
         return image, gt_mask
 
-# --- Loss Function ---
+# ugh fig this out
 def loss(pred, target, smooth=1.):
     pass
-# --- Training and Evaluation Logic ---
 
 def train_one_epoch(lora_model, original_predictor, dataloader, optimizer, loss_fn, device):
     lora_model.train() # Set the image encoder (wrapped by PEFT) to train mode
@@ -215,26 +214,26 @@ if __name__ == "__main__":
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {DEVICE}")
 
-    # 1. Load Base Model (Image Encoder) and Original Predictor
+    # Load Base Model (Image Encoder) and Original Predictor
     base_model, predictor_instance = load_base_model(model_id=args.model_id, device=DEVICE)
     if base_model is None:
         print("Exiting due to model loading failure.")
         exit()
 
-    # 2. Create LoRA Config
+    # Create LoRA Config
     # Update config based on argparse if needed
     lora_config = create_lora_config(base_model)
     lora_config.r = args.lora_r
     lora_config.lora_alpha = args.lora_alpha
     print(f"Using LoRA config: r={lora_config.r}, alpha={lora_config.lora_alpha}, targets={lora_config.target_modules}")
 
-    # 3. Apply LoRA to the Image Encoder
+    # Apply LoRA to the Image Encoder
     lora_model = apply_lora(base_model, lora_config)
     if lora_model is None:
         print("Exiting due to LoRA application failure.")
         exit()
 
-    # 4. Setup DataLoaders 
+    # Setup DataLoaders 
     # still todo: Define appropriate transforms
     train_transform = None 
     # val_transform = None
@@ -246,7 +245,7 @@ if __name__ == "__main__":
     print(f"Loaded placeholder training data with {len(train_dataset)} samples.")
     # print(f"Loaded placeholder validation data with {len(val_dataset)} samples.")
 
-    # 5. Setup Optimizer and Loss
+    # Setup Optimizer and Loss
     optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, lora_model.parameters()), lr=args.lr)
     loss_function = dice_loss
 
