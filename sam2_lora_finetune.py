@@ -112,7 +112,7 @@ class FineTuneDataset(Dataset):
         gt_mask_np[cy-size:cy+size, cx-size:cx+size] = 1
         gt_mask = torch.tensor(gt_mask_np, dtype=torch.float32).unsqueeze(0) # Add channel dim
 
-        # TODO: Apply necessary transforms (resizing, normalization)
+        # todo: Apply necessary transforms (resizing, normalization)
         #       matching how SAM2 expects input.
         # Example using hypothetical transform:
         # if self.transform:
@@ -164,13 +164,13 @@ def train_one_epoch(lora_model, original_predictor, dataloader, optimizer, loss_
 def evaluate(lora_model, original_predictor, dataloader, loss_fn, device):
     lora_model.eval() # Set encoder to evaluation mode
     total_loss = 0
-    # TODO: Add metric calculations (mIoU, BF1) using functions from metrics.py
+    # todo: Add metric calculations (mIoU, BF1) using functions from metrics.py
     # total_miou = 0
 
     progress_bar = tqdm(dataloader, desc="Validation Epoch", leave=False)
     with torch.no_grad():
         for batch_idx, (images, gt_masks) in enumerate(progress_bar):
-            # TODO: Convert images to tensor format expected by SAM2/Hiera + to(device)
+            # todo: Convert images to tensor format expected by SAM2/Hiera + to(device)
             # input_images = preprocess_batch(images).to(device)
             # gt_masks = gt_masks.to(device)
 
@@ -255,17 +255,17 @@ if __name__ == "__main__":
     for epoch in range(args.epochs):
         print(f"\nEpoch {epoch+1}/{args.epochs}")
         
-        # --- Training --- 
+        # Training  
         train_loss = train_one_epoch(
             lora_model,
-            predictor_instance, # Pass original predictor for its components
+            predictor_instance, 
             train_dataloader,
             optimizer,
             loss_function,
             DEVICE
         )
         
-        # --- Validation --- 
+        # Validation 
         val_loss = evaluate(
             lora_model, 
             predictor_instance, 
@@ -274,7 +274,7 @@ if __name__ == "__main__":
             DEVICE
         )
 
-        # --- Save Adapters --- 
+        
         epoch_output_dir = os.path.join(args.output_dir, f"epoch_{epoch+1}")
         os.makedirs(epoch_output_dir, exist_ok=True)
         print(f"Saving LoRA adapters for epoch {epoch+1} to {epoch_output_dir}")

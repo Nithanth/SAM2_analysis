@@ -12,7 +12,6 @@ from pipeline_utils import (
     load_sam2_evaluation_data 
 )
 
-# --- Main Pipeline --- 
 
 def run_evaluation_pipeline(config: dict):
     """
@@ -32,7 +31,6 @@ def run_evaluation_pipeline(config: dict):
     """
     print("--- Starting SAM2 Evaluation Pipeline --- ")
 
-    # --- 1. Parameter Extraction --- 
     # Get necessary paths, model ID, and settings from the config 
     model_hf_id = config.get('model_hf_id')
     data_path = config.get('data_path')
@@ -46,7 +44,6 @@ def run_evaluation_pipeline(config: dict):
         print("Error: Missing required configuration: 'model_hf_id', 'data_path', or 'image_base_dir'")
         return
 
-    # --- 2. Load Model and Data --- 
     try:
         # Load the SAM2 predictor and mask generator
         predictor, generator = load_sam2_predictor_and_generator(model_hf_id, generator_config)
@@ -65,7 +62,6 @@ def run_evaluation_pipeline(config: dict):
         print(f"Error during model or data loading: {e}")
         return # Stop pipeline if essential components fail to load
 
-    # --- 3. Main Evaluation Loop --- 
     results_data = [] 
     print("Processing evaluation items...")
     for item in tqdm(evaluation_items, desc="Evaluating Images"): 
@@ -98,7 +94,6 @@ def run_evaluation_pipeline(config: dict):
                 raise ValueError(f"Failed to load image: {image_path}")
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             
-            # --- 3a. Run SAM2 Inference --- 
             # Generate masks for the entire image
             predictions = predict_auto_mask(predictor, generator, image_rgb, image_path) 
             
@@ -109,13 +104,13 @@ def run_evaluation_pipeline(config: dict):
                 results_data.append(base_result)
                 continue
 
-            # --- 3b. Compare Predictions to Ground Truth --- 
+            # Compare Predictions to Ground Truth  
             best_iou = -1
             best_bf1 = -1
             best_sam2_score = np.nan 
             
             for pred_mask_data in predictions:
-                pred_mask = pred_mask_data['segmentation'] # Predicted mask (numpy array)
+                pred_mask = pred_mask_data['segmentation'] 
                 if pred_mask.shape != gt_mask.shape[:2]:
                     print(f"Warning: Shape mismatch GT {gt_mask.shape[:2]} vs Pred {pred_mask.shape} for {image_path}. Skipping this prediction.")
                     continue 
@@ -128,7 +123,7 @@ def run_evaluation_pipeline(config: dict):
                     best_bf1 = current_bf1
                     best_sam2_score = pred_mask_data.get('predicted_iou', np.nan)
 
-            # --- 3c. Record Best Result for Image --- 
+            # Record Best Result for Image  
             base_result['iou'] = best_iou if best_iou > -1 else np.nan 
             base_result['bf1'] = best_bf1 if best_iou > -1 else np.nan
             base_result['sam2_score'] = best_sam2_score
@@ -148,7 +143,7 @@ def run_evaluation_pipeline(config: dict):
             base_result['status'] = f'Error: {e}' 
             results_data.append(base_result)
 
-    # --- 4. Process and Save Results --- 
+    # Process and Save Results  
     print("Processing complete. Saving results...")
     if not results_data:
         print("Warning: No results were generated.")
